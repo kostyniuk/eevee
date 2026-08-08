@@ -14,14 +14,15 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.35",
-    "@vercel/connect": "0.4.3",
+    "@vercel/connect": ">=0.4.2",
     "ai": "^7.0.38",
     "eve": "^0.31.3",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.x",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vercel": "^58.9.0"
   },
   "overrides": {
     "ai": "^7.0.38"
