@@ -1,0 +1,1214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How eve works</title>
+<style>
+  :root {
+    --ivory:   #FAF9F5;
+    --slate:   #141413;
+    --clay:    #D97757;
+    --oat:     #E3DACC;
+    --olive:   #788C5D;
+    --gray-150:#F0EEE6;
+    --gray-300:#D1CFC5;
+    --gray-500:#87867F;
+    --gray-700:#3D3D3A;
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--ivory);
+    color: var(--gray-700);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: 56px 24px 120px;
+  }
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 48px;
+  }
+  @media (max-width: 920px) { .page { grid-template-columns: 1fr; } nav { display: none; } }
+
+  /* ── nav ──────────────────────────────── */
+  nav {
+    position: sticky;
+    top: 32px;
+    align-self: start;
+    font-size: 13px;
+  }
+  nav .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gray-500);
+    margin-bottom: 12px;
+  }
+  nav a {
+    display: block;
+    padding: 5px 0 5px 12px;
+    border-left: 2px solid var(--gray-300);
+    color: var(--gray-700);
+    text-decoration: none;
+  }
+  nav a:hover { color: var(--slate); border-color: var(--slate); }
+  nav a.l2 { padding-left: 24px; font-size: 12.5px; color: var(--gray-500); }
+  nav .files {
+    margin-top: 28px;
+    border-top: 1px solid var(--gray-300);
+    padding-top: 16px;
+  }
+  nav .files code {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--gray-500);
+    padding: 3px 0;
+  }
+
+  /* ── header ───────────────────────────── */
+  header { margin-bottom: 12px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gray-500);
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 32px;
+    color: var(--slate);
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+  .tldr {
+    border: 1.5px solid var(--gray-300);
+    border-left: 3px solid var(--clay);
+    border-radius: 10px;
+    background: #fff;
+    padding: 16px 18px;
+    margin-bottom: 8px;
+  }
+  .tldr b { color: var(--slate); }
+
+  h2 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 22px;
+    color: var(--slate);
+    margin: 40px 0 14px;
+    scroll-margin-top: 24px;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 17px;
+    color: var(--slate);
+    margin: 26px 0 8px;
+  }
+  p { margin-bottom: 12px; max-width: 680px; }
+  code { font-family: var(--mono); font-size: 13px; }
+
+  /* ── collapsible ─────────────────────── */
+  details {
+    border: 1.5px solid var(--gray-300);
+    border-radius: 10px;
+    background: #fff;
+    margin: 14px 0;
+    overflow: hidden;
+  }
+  summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    font-family: var(--serif);
+    font-size: 16px;
+    color: var(--slate);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "▸";
+    color: var(--clay);
+    font-family: var(--sans);
+    font-size: 12px;
+    transition: transform 120ms;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary .where {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--gray-500);
+    margin-left: auto;
+  }
+  details .body { padding: 0 16px 16px; }
+  details .body p { font-size: 14px; }
+  details .body pre {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--slate);
+    background: var(--gray-150);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 10px 0 4px;
+    overflow-x: auto;
+  }
+
+  /* ── tabs ─────────────────────────────── */
+  .tabs {
+    border: 1.5px solid var(--gray-300);
+    border-radius: 10px;
+    background: #fff;
+    margin: 16px 0 8px;
+    overflow: hidden;
+  }
+  .tabbar {
+    display: flex;
+    border-bottom: 1px solid var(--gray-300);
+    background: var(--gray-150);
+  }
+  .tabbar button {
+    appearance: none;
+    border: none;
+    background: none;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--gray-500);
+    padding: 10px 16px;
+    cursor: pointer;
+    border-right: 1px solid var(--gray-300);
+  }
+  .tabbar button.on {
+    background: #fff;
+    color: var(--slate);
+    border-bottom: 2px solid var(--clay);
+    margin-bottom: -1px;
+  }
+  .tabs pre {
+    display: none;
+    margin: 0;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--slate);
+    overflow-x: auto;
+  }
+  .tabs pre.on { display: block; }
+  .hl { color: var(--clay); }
+  .cm { color: var(--gray-500); }
+
+  /* ── callout ──────────────────────────── */
+  .callout {
+    display: flex;
+    gap: 12px;
+    border: 1.5px solid var(--oat);
+    background: rgba(227,218,204,0.35);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 18px 0;
+    font-size: 14px;
+  }
+  .callout .ico { color: var(--clay); font-weight: 600; }
+
+  /* ── faq ──────────────────────────────── */
+  dl.faq { margin-top: 8px; }
+  dl.faq dt {
+    font-family: var(--serif);
+    font-size: 16px;
+    color: var(--slate);
+    margin-top: 18px;
+  }
+  dl.faq dd { font-size: 14px; margin: 4px 0 0; max-width: 640px; }
+
+  /* ── extensions ───────────────────────── */
+  ul.gotchas { padding-left: 20px; max-width: 680px; }
+  ul.gotchas li { margin-bottom: 10px; }
+  table.grid {
+    width: 100%;
+    max-width: 680px;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1.5px solid var(--gray-300);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 14px;
+    margin: 16px 0;
+  }
+  table.grid th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--gray-500);
+    font-weight: normal;
+    background: var(--gray-150);
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--gray-300);
+  }
+  table.grid td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--gray-300);
+    vertical-align: top;
+  }
+  table.grid tr:last-child td { border-bottom: none; }
+  table.grid td.k { font-family: var(--mono); font-size: 12px; color: var(--slate); white-space: nowrap; }
+  /* ── follow-up additions ──────────────── */
+  .new { border-style: dashed !important; border-color: var(--clay) !important; }
+  h2.new, h3.new {
+    border-left: 3px dashed var(--clay);
+    padding-left: 12px;
+    margin-left: -15px;
+  }
+  .newtag {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--clay);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  summary .newtag { margin-left: 10px; }
+  figure.diagram {
+    border: 1.5px dashed var(--clay);
+    border-radius: 10px;
+    background: #fff;
+    padding: 20px 18px 12px;
+    margin: 18px 0;
+    max-width: 680px;
+  }
+  figure.diagram svg { width: 100%; height: auto; display: block; }
+  figure.diagram figcaption {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--gray-500);
+    margin-top: 12px;
+    line-height: 1.5;
+  }
+  .diagram .bx { fill: #fff; stroke: var(--gray-300); stroke-width: 1.5; }
+  .diagram .bx-a { fill: var(--gray-150); stroke: var(--gray-300); stroke-width: 1.5; }
+  .diagram .ttl { font-family: var(--sans); font-size: 11.5px; fill: var(--slate); }
+  .diagram .sub { font-family: var(--mono); font-size: 9.5px; fill: var(--gray-500); }
+  .diagram .lane { font-family: var(--mono); font-size: 9px; fill: var(--gray-500);
+                   letter-spacing: .08em; text-transform: uppercase; }
+  .diagram .ln { stroke: var(--gray-500); stroke-width: 1.2; fill: none; }
+  .diagram .ln-a { stroke: var(--clay); stroke-width: 1.4; fill: none; }
+  .diagram .dsh { stroke: var(--gray-300); stroke-width: 1; stroke-dasharray: 3 3; }
+
+  pre.plain {
+    background: #fff;
+    border: 1.5px solid var(--gray-300);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--slate);
+    overflow-x: auto;
+    margin: 16px 0;
+    max-width: 680px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <nav>
+    <div class="label">On this page</div>
+    <a href="#shape">The shape of an app</a>
+    <a href="#path">The request path</a>
+    <a href="#path" class="l2">1. Route</a>
+    <a href="#path" class="l2">2. Address</a>
+    <a href="#path" class="l2">3. Turn</a>
+    <a href="#path" class="l2">4. Step</a>
+    <a href="#path" class="l2">5. Deliver</a>
+    <a href="#slack-flow">Slack, end to end</a>
+    <a href="#durability">Durability</a>
+    <a href="#durability" class="l2">How replay works</a>
+    <a href="#runtimes">Two runtimes</a>
+    <a href="#sandbox-detail" class="l2">Inside the sandbox</a>
+    <a href="#author">What you author</a>
+    <a href="#isolation">Isolation rules</a>
+    <a href="#stream">The event stream</a>
+    <a href="#ship">Dev to production</a>
+    <a href="#gotchas">Gotchas</a>
+    <a href="#faq">FAQ</a>
+    <div class="files">
+      <div class="label">Files read</div>
+      <code>agent/agent.ts</code>
+      <code>agent/channels/eve.ts</code>
+      <code>agent/channels/slack.ts</code>
+      <code>eve/docs/concepts/*</code>
+      <code>eve/docs/channels/*</code>
+      <code>eve/docs/tools/*</code>
+      <code>eve/docs/sandbox.mdx</code>
+      <code>eve/docs/subagents.mdx</code>
+      <code>@workflow/core/*.d.ts</code>
+      <code>@workflow/world/*.d.ts</code>
+      <code>workflow-sdk.dev</code>
+    </div>
+  </nav>
+
+  <main>
+    <header>
+      <div class="eyebrow">Framework internals · architecture explainer</div>
+      <h1>How <code>eve</code> works</h1>
+      <div class="tldr" id="tldr">
+        <b>TL;DR</b> — An eve app is a Nitro HTTP server whose routes come entirely from
+        <em>channels</em>. Every route does one thing: hand a message to a <em>durable session</em>.
+        That session runs each turn as a Workflow SDK workflow that checkpoints at every model
+        step, so it survives crashes and redeploys and can park for days waiting on a human.
+        Credentials and your code run in the trusted <em>app runtime</em>; the model's shell
+        runs in an isolated <em>sandbox</em> that holds no secrets. Everything the run does is
+        projected onto one replayable NDJSON event stream.
+      </div>
+    </header>
+
+    <h2 id="shape">The shape of an app</h2>
+    <p>Almost everything in eve is convention over configuration, and the convention is
+      always the same: <b>a file's stem is its id</b>. <code>agent/tools/get_weather.ts</code>
+      is the tool the model calls as <code>get_weather</code>. <code>agent/channels/slack.ts</code>
+      is the channel addressed as <code>slack</code>. There is no registry file to keep in sync.</p>
+
+    <pre class="plain">agent/
+  agent.ts            <span class="cm">← optional. omit it and you get claude-sonnet-5.</span>
+  instructions.md     <span class="cm">← REQUIRED on root. the always-on system prompt.</span>
+  channels/           <span class="cm">← the only per-platform code. root agent only.</span>
+  tools/              <span class="cm">← defineTool, one file per tool</span>
+  skills/             <span class="cm">← markdown procedures, loaded on demand</span>
+  subagents/&lt;id&gt;/     <span class="cm">← a whole nested agent, own defineAgent</span>
+  connections/        <span class="cm">← MCP / OpenAPI + credentials</span>
+  hooks/              <span class="cm">← observe-only stream subscribers</span>
+  schedules/          <span class="cm">← cron. root agent only.</span>
+  sandbox/            <span class="cm">← backend + workspace seed</span>
+  lib/                <span class="cm">← shared code. import-only, never reaches the sandbox.</span>
+evals/                <span class="cm">← sibling of agent/, not inside it</span></pre>
+
+    <p>Identity never comes from an authored <code>name</code> or <code>id</code> field — it
+      is always the path. The root agent's own name comes from the enclosing
+      <code>package.json#name</code>. When something you wrote doesn't show up, <code>eve
+      info</code> prints the resolved surface and its discovery diagnostics, backed by
+      <code>.eve/discovery/agent-discovery-manifest.json</code>.</p>
+
+    <p>This repo is currently the minimum viable version of that tree — an
+      <code>agent.ts</code> naming a model, and two channels:</p>
+
+    <div class="tabs" data-tabs>
+      <div class="tabbar">
+        <button class="on" data-t="0">agent.ts</button>
+        <button data-t="1">channels/eve.ts</button>
+        <button data-t="2">channels/slack.ts</button>
+      </div>
+<pre class="on"><span class="cm">// agent/agent.ts — the whole agent definition</span>
+import { defineAgent } from "eve";
+import { openai } from "@ai-sdk/openai";
+
+export default defineAgent({
+  model: <span class="hl">openai("gpt-5.6-luna")</span>,
+  reasoning: "medium",
+});</pre>
+<pre><span class="cm">// agent/channels/eve.ts — exists ONLY to set route auth</span>
+import { eveChannel } from "eve/channels/eve";
+import { localDev, placeholderAuth, vercelOidc } from "eve/channels/auth";
+
+export default eveChannel({
+  auth: [
+    vercelOidc(),        <span class="cm">// TUI + your own deployments</span>
+    localDev(),          <span class="cm">// eve dev on localhost</span>
+    <span class="hl">placeholderAuth()</span>,   <span class="cm">// 401s in prod until you replace it</span>
+  ],
+});</pre>
+<pre><span class="cm">// agent/channels/slack.ts — the entire Slack integration</span>
+import { connectSlackCredentials } from "@vercel/connect/eve";
+import { slackChannel } from "eve/channels/slack";
+
+export default slackChannel({
+  credentials: connectSlackCredentials("slack/eevee"),
+});</pre>
+    </div>
+
+    <p>Note what is <em>absent</em>: adding Slack required no change to
+      <code>agent.ts</code>. That is the central architectural claim — the agent never
+      learns where a message came from.</p>
+
+    <h2 id="path">The request path, step by step</h2>
+    <p>Expand each stage. The layering is strict: Nitro knows nothing about sessions,
+      channels know nothing about the model loop, and the model loop knows nothing about
+      HTTP.</p>
+
+    <details open>
+      <summary>1 · Nitro routes the request <span class="where">the HTTP host</span></summary>
+      <div class="body">
+        <p>Nitro hosts the HTTP routes and the workflow entrypoints. That is the full extent
+          of its job — it supplies neither the workflow state store nor the sandbox runtime,
+          both of which are pluggable adapters underneath it.</p>
+        <p>Every route in the app is contributed by a channel. The eve channel mounts
+          <code>/eve/v1/session*</code> and does so <b>even if no <code>channels/eve.ts</code>
+          file exists</b>; a Slack channel mounts Slack's webhook endpoints; a custom channel
+          mounts whatever you declare with <code>GET/POST/WS</code> from <code>eve/channels</code>.</p>
+      </div>
+    </details>
+
+    <details class="new">
+      <summary>What is Nitro, exactly? <span class="newtag">added</span></summary>
+      <div class="body">
+        <p>Nitro is an open-source server toolkit — the HTTP engine underneath Nuxt, now used
+          standalone by a number of frameworks. Think of it as "Express, but it compiles to a
+          deployment target." You register routes against its router (h3), and at build time it
+          emits a self-contained server bundle for whichever host you're aiming at: a plain
+          Node.js server in <code>.output/</code>, or Vercel's Build Output API format in
+          <code>.vercel/output/</code>, from identical source.</p>
+        <p>That portability is precisely why eve chose it. The reason <code>eve build &amp;&amp;
+          eve start</code> and <code>vercel deploy</code> run the same code is that Nitro absorbs
+          the difference. It also contributes two things eve leans on directly: a
+          <b>scheduled-task runner</b> (which is what actually fires
+          <code>agent/schedules/</code> on a self-hosted box) and <b>WebSocket support</b> (which
+          is what <code>WS()</code> routes in a custom channel bind to).</p>
+        <p>What Nitro is <em>not</em> is equally important. It does not know what a session is,
+          it does not store workflow state, and it does not run the sandbox. Those are separate
+          adapters underneath it. Nitro's entire job is: receive an HTTP request, route it to a
+          handler, and expose the workflow entrypoints at
+          <code>/.well-known/workflow/</code> so the durable runtime can call back in.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>2 · The channel normalizes and addresses <span class="where">agent/channels/*.ts</span></summary>
+      <div class="body">
+        <p>A channel has exactly three jobs: verify and parse the platform payload into a
+          plain message; map the platform conversation onto a session; decide how the reply
+          gets delivered back out.</p>
+        <p>The addressing part is the subtle one. A channel does not hold a session id — it
+          holds a <b>channel-local address</b> (a Slack thread ts, a phone number, an issue id)
+          and calls <code>from(address).send(text)</code>. eve resolves that to whichever
+          session currently owns the address, creating one if nobody does. Exactly one live
+          session may own an address; <code>rekey()</code> moves it.</p>
+        <pre>const source = from(threadId);
+await source.send("Hello", { auth });
+await source.cancel({ turnId });
+await source.reset({ reason: "Start over" });</pre>
+        <p>Security rule that applies to every custom channel: derive the caller from a
+          verified signature or token using constant-time comparison, and
+          <b>never trust an identity field in the request body</b> — it is attacker-controlled.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>3 · The session starts a turn <span class="where">durable workflow</span></summary>
+      <div class="body">
+        <p>A <b>session</b> is the whole durable conversation; it lives 30 days by default
+          (<code>limits.sessionTimeoutMs</code>, or <code>false</code> to disable). A
+          <b>turn</b> is one user message and every model call, tool call, and piece of
+          reasoning it triggers.</p>
+        <p>Each turn runs as a durable workflow on the open-source Workflow SDK. Locally and
+          under <code>eve start</code> that persists to disk under
+          <code>.eve/.workflow-data</code>; on Vercel the same code runs against Vercel
+          Workflow. You never write workflow code — <code>start()</code> and
+          <code>resumeHook()</code> are runtime implementation details that channels, tools,
+          and hooks never touch.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>4 · Steps run and checkpoint <span class="where">the durability unit</span></summary>
+      <div class="body">
+        <p>A <b>step</b> is one model call plus the tool calls it makes, and it is the unit
+          of durability. eve checkpoints progress and serializes durable state at every step
+          boundary. Your tool code runs inside a managed step, which is why tools, the
+          sandbox, and subagents all feel synchronous despite sitting on a durable substrate.</p>
+        <p>Some steps don't finish — they <b>park</b>. A human-in-the-loop approval, an
+          interactive OAuth sign-in, or a long-running subagent all suspend the workflow
+          durably, holding zero compute until the click or callback arrives. Days later is a
+          supported case, not an edge case.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>5 · The channel delivers <span class="where">back to the platform</span></summary>
+      <div class="body">
+        <p>Delivery is the channel's decision again. The eve channel streams NDJSON down the
+          open HTTP response. The Slack channel posts into the thread, composing rich
+          messages from the Chat SDK's <b>card-builder components</b>, converted to Block Kit
+          at post time.</p>
+        <p>That is the entire extent of eve's relationship to the Chat SDK. Its runtime —
+          <code>Chat</code>, <code>Adapter</code>, <code>Thread</code> — is never imported and
+          is not reachable from eve's public API. Webhook handling, signature verification,
+          event parsing, and thread management are all eve's own.</p>
+      </div>
+    </details>
+
+    <h2 id="slack-flow" class="new">Worked example: tagging the agent in Slack</h2>
+    <p>The abstract contract above is easier to hold once you've traced one real message. Here
+      is everything that happens between <code>@agent what broke the deploy?</code> and the
+      reply landing in the thread.</p>
+
+    <h3 class="new">Why webhooks at all?</h3>
+    <p>Slack is not going to hold a connection open to your server, and your server cannot poll
+      Slack for "did anyone mention me" at any reasonable rate. So the relationship is inverted:
+      you register a URL with Slack once, and Slack does an <b>HTTP POST to you</b> every time
+      something you subscribed to happens. That is a webhook — an inbound call you did not
+      initiate, on a route you published in advance.</p>
+    <p>For this repo that route is <code>/eve/v1/slack</code>, registered through Vercel Connect
+      with <code>vercel connect attach &lt;uid&gt; --triggers --trigger-path /eve/v1/slack</code>.
+      The <code>--triggers</code> flag is what turns on Slack Event Subscriptions; without it
+      Slack never delivers <code>app_mention</code> or <code>message.im</code> at all, and the
+      agent is silent with nothing in the logs to explain why.</p>
+    <p>Because anyone on the internet can POST to that URL, the first thing that must happen is
+      proof the request really came from Slack. <code>connectSlackCredentials()</code> returns
+      both halves of that — a <code>webhookVerifier</code> for inbound signature checking and a
+      <code>botToken</code> for outbound calls — which is why this app has no
+      <code>SLACK_SIGNING_SECRET</code> anywhere in it.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 520" role="img" aria-label="Flow from a Slack thread through the eve deployment and back">
+        <defs>
+          <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="#87867F"/>
+          </marker>
+          <marker id="ahc" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="#D97757"/>
+          </marker>
+        </defs>
+
+        <text class="lane" x="30" y="16">Slack</text>
+        <text class="lane" x="30" y="104">your deployment · nitro</text>
+        <text class="lane" x="30" y="344">durable runtime</text>
+        <line class="dsh" x1="30" y1="92" x2="610" y2="92"/>
+        <line class="dsh" x1="30" y1="332" x2="610" y2="332"/>
+
+        <rect class="bx-a" x="30" y="26" width="330" height="46" rx="8"/>
+        <text class="ttl" x="46" y="46">Slack thread</text>
+        <text class="sub" x="46" y="61">channel C0123 · thread_ts 1712345678.000100</text>
+
+        <rect class="bx" x="30" y="114" width="330" height="46" rx="8"/>
+        <text class="ttl" x="46" y="134">POST /eve/v1/slack</text>
+        <text class="sub" x="46" y="149">Events API delivers app_mention</text>
+
+        <rect class="bx" x="30" y="194" width="330" height="46" rx="8"/>
+        <text class="ttl" x="46" y="214">slackChannel</text>
+        <text class="sub" x="46" y="229">verify signature → onAppMention → { auth }</text>
+
+        <rect class="bx" x="30" y="274" width="330" height="46" rx="8"/>
+        <text class="ttl" x="46" y="294">from(thread_ts).send(text)</text>
+        <text class="sub" x="46" y="309">address → the session that owns it</text>
+
+        <rect class="bx" x="30" y="354" width="330" height="46" rx="8"/>
+        <text class="ttl" x="46" y="374">turn = step → step → step</text>
+        <text class="sub" x="46" y="389">model call + tool calls, checkpointed</text>
+
+        <rect class="bx" x="30" y="434" width="330" height="46" rx="8"/>
+        <text class="ttl" x="46" y="454">NDJSON event stream</text>
+        <text class="sub" x="46" y="469">turn.started · actions.requested · message.completed</text>
+
+        <line class="ln" x1="195" y1="72"  x2="195" y2="110" marker-end="url(#ah)"/>
+        <line class="ln" x1="195" y1="160" x2="195" y2="190" marker-end="url(#ah)"/>
+        <line class="ln" x1="195" y1="240" x2="195" y2="270" marker-end="url(#ah)"/>
+        <line class="ln" x1="195" y1="320" x2="195" y2="350" marker-end="url(#ah)"/>
+        <line class="ln" x1="195" y1="400" x2="195" y2="430" marker-end="url(#ah)"/>
+
+        <path class="ln-a" d="M360,457 L500,457 L500,49 L364,49" marker-end="url(#ahc)"/>
+        <text class="sub" x="510" y="250" fill="#D97757">channel</text>
+        <text class="sub" x="510" y="263" fill="#D97757">events →</text>
+        <text class="sub" x="510" y="276" fill="#D97757">thread.post()</text>
+
+        <text class="sub" x="374" y="378">Thinking… → Working… →</text>
+        <text class="sub" x="374" y="391">action labels, posted live</text>
+      </svg>
+      <figcaption>The address (thread_ts) never leaves the channel layer; the session id never
+        enters Slack. Only the clay path is outbound.</figcaption>
+    </figure>
+
+    <details class="new" open>
+      <summary>The same flow, step by step <span class="where">agent/channels/slack.ts</span></summary>
+      <div class="body">
+        <p><b>1. You type <code>@agent what broke the deploy?</code></b> Slack matches it against
+          your app's Event Subscriptions and POSTs an <code>app_mention</code> envelope to
+          <code>/eve/v1/slack</code>, carrying <code>team_id</code>, <code>event_id</code>, the
+          channel, and the <code>thread_ts</code>.</p>
+        <p><b>2. Nitro routes it; the channel verifies it.</b> The signature is checked against
+          Connect's <code>webhookVerifier</code> before anything else runs. Identity is derived
+          from that verified signature — never from a field in the body, which is
+          attacker-controlled.</p>
+        <p><b>3. A handler decides whether to answer.</b> Handlers run in strict precedence:
+          <code>onAppMention</code> → <code>onMessage</code> → <code>onEvent</code> → the
+          built-in default, and only the first available one runs. Returning
+          <code>{ auth }</code> dispatches, <code>null</code> drops the message entirely, and
+          <code>{ auth, context }</code> dispatches with extra background injected. eve discards
+          messages authored by the installed app before any of this, so the agent cannot reply
+          to itself in a loop.</p>
+        <p><b>4. The thread is resolved to a session.</b> The channel calls
+          <code>from(thread_ts).send(text)</code>. If a live session already owns that thread,
+          this is a follow-up turn on the existing conversation with full history. If not, a
+          session is created and takes ownership. Only <code>send()</code> can create one —
+          <code>cancel</code>, <code>compact</code>, <code>clear</code>, and <code>reset</code>
+          never do.</p>
+        <p><b>5. The turn runs, and Slack narrates it.</b> The default handlers post
+          <code>Thinking…</code> on inbound, <code>Working…</code> on <code>turn.started</code>,
+          a truncated reasoning snippet on <code>reasoning.appended</code>, and an action label
+          on <code>actions.requested</code> — the tool name plus its most telling argument, like
+          <code>grep useEveAgent</code>. Those are the same stream events described below, just
+          rendered as message edits.</p>
+        <p><b>6. The reply is posted.</b> On <code>message.completed</code> the channel posts
+          into the thread, skipping events whose <code>finishReason</code> is
+          <code>"tool-calls"</code> — that filter is what separates the agent's final answer
+          from its mid-turn narration.</p>
+        <pre>events: {
+  "message.completed"(eventData, channel, ctx) {
+    if (eventData.finishReason === "tool-calls") return;
+    if (eventData.message) channel.thread.post(eventData.message);
+  },
+}</pre>
+        <p><b>7. If the turn needs a human, it parks.</b> An approval renders as Slack buttons.
+          The workflow suspends holding no compute; clicking a button resumes it. A sign-in
+          challenge is treated as a credential rather than a status, so the public thread gets a
+          link-free note while the actual OAuth URL goes to the triggering user ephemerally.</p>
+      </div>
+    </details>
+
+    <div class="callout new">
+      <span class="ico">★</span>
+      <div>By default the agent sees only the message that mentioned it, not the thread above
+        it. Set <code>threadContext: { since: "last-agent-reply" }</code> to inject the
+        conversation, attributed by Slack user id, and keep repeated mentions incremental
+        instead of re-sending the whole thread each time.</div>
+    </div>
+
+    <h2 id="durability">What durability actually buys you</h2>
+    <p>Kill the process, hit a timeout, or redeploy mid-turn, and the run resumes from the
+      last completed step. Completed steps never re-execute; eve replays the recorded result
+      from its journal. Crash recovery, redeploys, and resuming a parked turn therefore emit
+      nothing new to the stream at all.</p>
+    <p>The exception is the one you have to design around: a step interrupted
+      <em>mid-execution</em> re-runs, and eve will run a durable step up to four times.</p>
+
+    <div class="callout">
+      <span class="ico">★</span>
+      <div>Make non-idempotent side effects — charges, emails, outbound posts — idempotent,
+        or gate them behind an <code>approval</code> policy. Everything the interrupted
+        attempt already wrote to the stream stays there, and the retry emits its own events
+        with fresh ids, so a consumer sees both attempts and nothing records which one won.</div>
+    </div>
+
+    <h3 id="replay" class="new">How that is actually achieved</h3>
+    <p>Yes — durable functions, in the specific sense Temporal and Azure Durable Functions mean
+      it. The mechanism is <b>event-sourced deterministic replay</b>, and the thing that makes it
+      click is realizing that nothing is ever "frozen and thawed." No stack is serialized, no
+      continuation is captured, no process is held open. There is only an append-only log and a
+      function that can be re-run against it.</p>
+
+    <p>The journal is that log. In the Workflow SDK's <code>World</code> interface, storage has
+      exactly one write path — <code>events.create()</code> — and the runs, steps, and hooks you
+      can query are materialized views over it, not independently mutable records. The
+      vocabulary is small:</p>
+
+    <pre class="plain">run_created   run_started   run_completed  run_failed  run_cancelled
+step_created  <span class="hl">step_started</span>  <span class="hl">step_completed</span> step_failed step_retrying
+hook_created  hook_received hook_disposed  hook_conflict
+wait_created  wait_completed                attr_set</pre>
+
+    <p>A step writes <code>step_started</code> before its body runs and
+      <code>step_completed</code> (with the serialized result) after it settles. Those two
+      bracketing events are the entire durability guarantee.</p>
+
+    <details class="new" open>
+      <summary>What physically happens when a crashed run resumes <span class="where">@workflow/core/runtime</span></summary>
+      <div class="body">
+        <p>A fresh runtime is instantiated and <b>the workflow function re-executes from the
+          top</b>. It does not resume at the line it died on — that line no longer exists
+          anywhere. As execution walks forward, each <code>await</code> on a step consults the
+          journal: if a <code>step_completed</code> event is already recorded, the awaited value
+          resolves <em>instantly from the log</em> and the step body never runs. The first step
+          with no terminal event is the first thing that actually executes.</p>
+        <p>So "picks up from the last completed step" and "re-runs from the top" are both true,
+          at different layers. The function body genuinely replays; it is simply near-free to do
+          so, because everything already settled short-circuits. This is why an interrupted step
+          re-runs and a completed one never does — the interrupted one wrote
+          <code>step_started</code> but no terminal event, so replay treats it as never having
+          happened.</p>
+        <p>It is also why crash recovery emits nothing to your event stream. Replaying a
+          completed step produces its recorded result without re-entering the body, and the body
+          is what emits.</p>
+      </div>
+    </details>
+
+    <details class="new">
+      <summary>The determinism tax you pay for it <span class="where">workflow-sdk.dev</span></summary>
+      <div class="body">
+        <p>If the function is re-executed on every invocation, it has to make the same decisions
+          every time — otherwise replay walks a different path than the journal describes. That
+          is the constraint the whole model rests on. Anything non-deterministic or
+          side-effecting belongs <em>inside</em> a step, whose result gets journaled, rather than
+          in workflow scope.</p>
+        <p>Worth correcting a common assumption: the SDK does not forbid <code>Math.random()</code>
+          and <code>Date</code> in workflow scope — it <b>seeds and fixes them</b>, so they return
+          the same values on every replay and are safe to use. Genuine I/O is the thing that must
+          move into a step; workflow scope has no <code>fetch</code>, no timers, and no Node
+          built-ins.</p>
+        <p>In eve you mostly don't feel this, because you never write workflow code. eve's own
+          turn loop <em>is</em> the workflow, and your tool bodies run inside managed steps —
+          which is exactly why a tool can do arbitrary I/O and still sit on a durable substrate.</p>
+      </div>
+    </details>
+
+    <details class="new">
+      <summary>Parking, retries, and worlds <span class="where">@workflow/core, @workflow/world</span></summary>
+      <div class="body">
+        <p><b>Parking is a thrown signal.</b> When the function awaits something with no
+          corresponding journal entry — a pending approval, an OAuth callback — the runtime
+          throws a <code>WorkflowSuspension</code> carrying the list of pending operations. The
+          handler durably records <code>hook_created</code> / <code>wait_created</code>, and then
+          the process simply exits. Nothing in memory represents "waiting"; the suspended state
+          <em>is</em> the log plus a pending hook row. That is the literal meaning of holding no
+          compute.</p>
+        <p>Waking is the mirror image: <code>resumeHook(token, payload)</code>, called from an
+          ordinary route handler, writes <code>hook_received</code> and enqueues a dispatch. The
+          next invocation replays, reaches the same <code>await</code>, finds the event now
+          present, and continues.</p>
+        <p><b>Retries.</b> <code>DEFAULT_STEP_MAX_RETRIES = 3</code> — which is where "up to four
+          times" comes from: one initial attempt plus three retries. Attempt count isn't a
+          counter, it's derived from how many <code>step_started</code> events the log already
+          holds for that step. Throw <code>FatalError</code> to skip retries entirely, or
+          <code>RetryableError</code> with a <code>retryAfter</code> to back off a rate limit.</p>
+        <p><b>A world</b> is the pluggable backend for all of this:
+          <code>World extends Queue, Streamer, Storage</code>. Storage is the event log, Streamer
+          backs the event stream, Queue dispatches invocations. It advertises a
+          <code>specVersion</code> the runtime gates on, plus capability flags so the core enables
+          optimizations only where supported. eve ships <code>@workflow/world-local</code>
+          (on-disk, dev and self-host) and <code>@workflow/world-vercel</code>; its docs name
+          <code>@workflow/world-postgres</code> as an alternative, though that one isn't pinned in
+          this repo's dependency tree.</p>
+        <p>Concurrent writers are handled by optimistic concurrency: writes carry a precondition
+          on the log's state, so a stale replay racing a live one is rejected with a 412 rather
+          than corrupting the journal.</p>
+      </div>
+    </details>
+
+    <p>On Vercel, a production deployment change takes effect on the next model turn of an
+      existing session: new instructions, model, and tools, with conversation history and
+      authored state intact. Identity-based channels like a Telegram private chat adopt agent
+      updates without needing a new session.</p>
+
+    <h2 id="runtimes">Two runtimes, one trust boundary</h2>
+    <p>An eve agent spans two execution environments, and the split is a security boundary
+      rather than a performance one.</p>
+
+    <table class="grid">
+      <tr><th>&nbsp;</th><th>App runtime</th><th>Sandbox</th></tr>
+      <tr><td class="k">secrets / env</td><td>yes</td><td>none</td></tr>
+      <tr><td class="k">Node.js code</td><td>yes</td><td>no</td></tr>
+      <tr><td class="k">network</td><td>unrestricted</td><td>policy-controlled</td></tr>
+      <tr><td class="k">filesystem</td><td>the app's own</td><td>isolated <code>/workspace</code></td></tr>
+      <tr><td class="k">runs</td><td>agent loop, model calls, tool executors, hooks, connections</td><td>the model's shell and processes</td></tr>
+    </table>
+
+    <p>Provider keys, tool secrets, and MCP/OpenAPI/connection credentials stay in the app
+      runtime and are resolved per step — never serialized into durable state, never placed in
+      conversation history. When sandboxed code needs authenticated network access (cloning a
+      private repo, say), <b>credential brokering</b> injects the auth header at the sandbox's
+      network firewall for matching domains. The secret never enters the sandbox process; only
+      the response does.</p>
+
+    <p>The two have decoupled lifetimes. A parked workflow holds no sandbox compute, and the
+      sandbox is keyed per durable session rather than per deployment — a redeploy does not
+      discard it. Only an actual change to the sandbox definition forces a rebuild.</p>
+
+    <div class="callout">
+      <span class="ico">★</span>
+      <div>Counterintuitive: <code>read_file</code>, <code>write_file</code>,
+        <code>glob</code>, and <code>grep</code> do <em>not</em> execute in the sandbox. They
+        run in the app runtime and proxy into it. Only actual shell commands run inside. The
+        upside is that all sandbox work flows through app-side tools, so it inherits the same
+        approval and instrumentation path as any other tool call.</div>
+    </div>
+
+    <h3 id="sandbox-detail" class="new">So what actually runs in the sandbox?</h3>
+    <p>A Linux machine with a shell. Not a JavaScript VM, not a Python interpreter — a real
+      filesystem rooted at <code>/workspace</code> and a real <code>bash</code>, from the
+      published <code>ghcr.io/vercel/eve:latest</code> image. Whatever binaries that image
+      carries are what the model has: <code>git</code>, <code>node</code>, <code>python</code>,
+      package managers. The model isn't handed a language; it's handed a command line and picks
+      whatever suits the task, exactly as you would over SSH.</p>
+
+    <p>Which is to say the answer to "does it run JS or Python?" is <em>both, or neither</em> —
+      it runs commands. If the model wants Python it writes a <code>.py</code> file and runs
+      <code>python</code> on it. Your <code>agent/tools/*.ts</code> files never go near it; those
+      execute in the app runtime with your secrets.</p>
+
+    <table class="grid new">
+      <tr><th>the model wants to…</th><th>what happens</th></tr>
+      <tr><td class="k">explore a repo</td><td><code>bash: git clone …</code> then <code>glob</code> / <code>grep</code> over the result</td></tr>
+      <tr><td class="k">crunch a CSV</td><td>writes <code>analysis.py</code>, runs <code>python analysis.py</code>, reads stdout</td></tr>
+      <tr><td class="k">check its own work</td><td><code>bash: npm test</code> — and can iterate on a real failure</td></tr>
+      <tr><td class="k">run a server</td><td><code>spawn()</code> keeps it alive while the turn continues; <code>kill()</code> ends it</td></tr>
+      <tr><td class="k">produce a file for you</td><td>writes to <code>/workspace</code>, which survives every turn of the session</td></tr>
+    </table>
+
+    <p><b>Where it physically runs</b> depends on the backend, resolved by
+      <code>defaultBackend()</code> in priority order: Vercel Sandbox when deployed on Vercel,
+      then Docker if a daemon is reachable, then microsandbox (a local VM, macOS on Apple
+      Silicon or Linux with KVM), and finally <code>just-bash</code> — a pure-JS simulated shell
+      with a virtual filesystem and <b>no real binaries at all</b>. That last fallback is worth
+      knowing about, because an agent that works in production and mysteriously can't find
+      <code>git</code> locally has usually landed on it.</p>
+
+    <p>The sandbox exists to give the model a place to be wrong safely. It holds no
+      <code>process.env</code>, no secrets, and no route back into the app runtime, so a
+      destructive command or a prompt-injected instruction damages a disposable
+      <code>/workspace</code> and nothing else. Egress defaults to <code>allow-all</code>, which
+      is the setting to change first for anything sensitive — <code>"deny-all"</code> or an
+      explicit allow-list, set on the backend factory or in <code>onSession</code>.</p>
+
+    <h2 id="author">What you author</h2>
+    <p>Six surfaces, each a directory under <code>agent/</code>. The distinction that matters
+      most is <b>tools versus skills</b>: a tool is a typed action with runtime behavior; a
+      skill is a procedure written in markdown. Loading a skill adds instructions to context
+      and <em>never</em> adds execution surface.</p>
+
+    <div class="tabs" data-tabs>
+      <div class="tabbar">
+        <button class="on" data-t="0">tool</button>
+        <button data-t="1">skill</button>
+        <button data-t="2">state</button>
+        <button data-t="3">hook</button>
+        <button data-t="4">subagent</button>
+      </div>
+<pre class="on"><span class="cm">// agent/tools/get_weather.ts → tool name "get_weather"</span>
+import { defineTool } from "eve/tools";
+import { z } from "zod";
+
+export default defineTool({
+  description: "Get the current weather for a city.",
+  inputSchema: z.object({ city: z.string().min(1) }),
+  <span class="cm">// approval: once()  ← omitted means NO human sign-off</span>
+  async execute({ city }, ctx) {
+    const sandbox = await ctx.getSandbox();
+    return { city, condition: "Sunny", temperatureF: 72 };
+  },
+});</pre>
+<pre><span class="cm">-- agent/skills/triage.md, or skills/triage/SKILL.md --</span>
+---
+description: How to triage an inbound incident report.
+---
+
+<span class="cm"># Triage</span>
+1. Classify severity from the reporter's description.
+2. ...
+
+<span class="cm">// The model sees only the description until it calls the</span>
+<span class="cm">// framework-owned load_skill tool. Progressive disclosure.</span></pre>
+<pre><span class="cm">// durable, per-session, survives crashes and multi-day pauses</span>
+import { defineState } from "eve/context";
+
+export const budget = defineState(
+  "my-agent.budget",
+  () =&gt; ({ count: 0, cap: 25 }),
+);
+
+<span class="cm">// inside a tool or hook:</span>
+const { count } = await budget.get();
+await budget.update(b =&gt; ({ ...b, count: b.count + 1 }));
+<span class="cm">// Does NOT reset between turns. Never shared with subagents.</span></pre>
+<pre><span class="cm">// agent/hooks/audit.ts — observe-only, cannot inject context</span>
+import { defineHook } from "eve/hooks";
+
+export default defineHook({
+  events: {
+    async "session.started"(event, ctx) { <span class="cm">/* ... */</span> },
+    async "message.completed"(event) { <span class="cm">/* ... */</span> },
+  },
+});
+<span class="cm">// At-least-once: a replayed step re-fires hooks under new ids.</span></pre>
+<pre><span class="cm">// agent/subagents/researcher/agent.ts</span>
+import { defineAgent } from "eve";
+
+export default defineAgent({
+  <span class="hl">description</span>: "Investigate ambiguous questions first.",
+  model: "anthropic/claude-opus-4.8",
+});
+<span class="cm">// description is REQUIRED — it's what the parent model routes on.</span>
+<span class="cm">// Registers as the bare tool name "researcher".</span></pre>
+    </div>
+
+    <h3>The default harness</h3>
+    <p>Before you author anything, every agent already has a tool set:
+      <code>bash</code>, <code>read_file</code>, <code>write_file</code>, <code>glob</code>,
+      <code>grep</code>, <code>web_fetch</code>, <code>web_search</code>, <code>todo</code>,
+      and <code>ask_question</code>. Three more appear conditionally —
+      <code>agent</code> only in the root session, <code>load_skill</code> only if skills are
+      declared, <code>connection_search</code> only if connections are. Authoring a file at a
+      built-in's slug overrides it; exporting <code>disableTool()</code> removes it. A filename
+      that matches no known built-in is a build error rather than a silent no-op.</p>
+
+    <p>Compaction is part of the harness too. When the conversation plus its checkpoint
+      envelope crosses <code>compaction.thresholdPercent</code> (default <code>0.9</code>),
+      eve summarizes older turns and preserves framework tool state across the boundary
+      automatically.</p>
+
+    <h2 id="isolation">The isolation rules</h2>
+    <p>Delegation in eve is deliberately non-transitive, and the defaults are stricter than
+      most people assume. There are two mechanisms.</p>
+
+    <p>The built-in <code>agent</code> tool delegates to a copy of the root agent: it inherits
+      instructions, connections, auth, and the <em>same</em> sandbox, but gets fresh
+      conversation history and fresh state. A declared subagent under
+      <code>agent/subagents/&lt;id&gt;/</code> inherits <b>nothing</b> from the root's authored
+      slots — an absent slot falls back to the framework default, not the parent's version.</p>
+
+    <table class="grid">
+      <tr><th>slot</th><th><code>agent</code> tool copy</th><th>declared subagent</th></tr>
+      <tr><td class="k">instructions</td><td>inherited</td><td>own, optional</td></tr>
+      <tr><td class="k">tools</td><td>inherited, minus root-only</td><td>own <code>tools/</code></td></tr>
+      <tr><td class="k">skills</td><td>inherited</td><td>own <code>skills/</code></td></tr>
+      <tr><td class="k">sandbox</td><td>shared with parent</td><td>own</td></tr>
+      <tr><td class="k">state</td><td>fresh</td><td>fresh</td></tr>
+      <tr><td class="k">channels, schedules</td><td colspan="2">root only, in both cases</td></tr>
+    </table>
+
+    <p>A subagent boundary is a <em>context</em> boundary, not a permission boundary. A
+      sensitive tool still needs its own <code>approval</code> policy on the other side of it.</p>
+
+    <h2 id="stream">One stream for everything</h2>
+    <p>Every observable thing a run does lands on a single newline-delimited JSON stream:
+      <code>turn.started</code> → <code>step.started</code> → <code>actions.requested</code> →
+      <code>action.result</code> → <code>message.appended</code>… →
+      <code>turn.completed</code> → <code>session.waiting</code>. The same stream feeds the
+      terminal UI, <code>useEveAgent</code>, your hooks, and any consumer you point at it.</p>
+
+    <details class="new">
+      <summary>What is NDJSON? <span class="newtag">added</span></summary>
+      <div class="body">
+        <p>Newline-Delimited JSON: one complete JSON value per line, separated by
+          <code>\n</code>. The file or response as a whole is <em>not</em> valid JSON — it is a
+          sequence of independent JSON documents. Content type
+          <code>application/x-ndjson</code>.</p>
+        <pre>{"type":"turn.started","data":{...},"meta":{...}}
+{"type":"message.appended","data":{"messageDelta":"It is "},...}
+{"type":"message.completed","data":{...},"meta":{...}}</pre>
+        <p>The reason to use it instead of a JSON array is that <b>an array can't be consumed
+          until it closes</b>. A reader has to wait for the final <code>]</code> before the
+          parser will hand back anything, which is useless for a response that stays open for
+          minutes. With NDJSON a consumer splits on newline and parses each line the moment it
+          arrives — so tokens appear as the model produces them. Equally important, the writer
+          never has to hold the whole document in memory or know in advance how many events
+          there will be.</p>
+        <p>You may know the same idea as JSON Lines (<code>.jsonl</code>); they are the same
+          format under two names. The obvious alternative here would have been Server-Sent
+          Events, and eve's stream carries the same information, but NDJSON has no
+          <code>data:</code> field framing to strip, works identically for a
+          <code>curl</code> pipe and a file on disk, and imposes nothing browser-specific — this
+          stream is read as often by a server-side ingest job as by a UI.</p>
+      </div>
+    </details>
+
+    <div class="tabs" data-tabs>
+      <div class="tabbar">
+        <button class="on" data-t="0">start</button>
+        <button data-t="1">stream</button>
+        <button data-t="2">event</button>
+        <button data-t="3">ingest</button>
+      </div>
+<pre class="on">curl -X POST http://127.0.0.1:2000/eve/v1/session \
+  -H 'content-type: application/json' \
+  -d '{"message":"Summarize the latest forecast."}'
+
+<span class="cm"># {"ok":true,"sessionId":"wrun_A","status":"accepted"}</span>
+<span class="cm"># also returned as the x-eve-session-id header</span></pre>
+<pre><span class="cm"># startIndex is an ABSOLUTE event count; 0 rewinds to the start</span>
+curl -N "http://127.0.0.1:2000/eve/v1/session/wrun_A/stream?<span class="hl">startIndex=0</span>"
+
+<span class="cm"># negative reads from the tail; -1 is the latest event</span>
+curl -N ".../stream?startIndex=-1"
+
+<span class="cm"># catch-up read that stops instead of following:</span>
+curl -i ".../stream?startIndex=12&amp;includeTailIndex=1"
+<span class="cm"># x-eve-stream-tail-index: 47</span></pre>
+<pre>{
+  "type": "message.completed",
+  "data": {
+    "message": "Sunny and 72°F.",
+    "finishReason": "stop",
+    "sequence": 0, "stepIndex": 0, "turnId": "turn_0"
+  },
+  "meta": {
+    <span class="hl">"id": "evt_01KYJBZA88B4M9XN3RTC5FDGHJ"</span>,
+    "at": "2026-07-27T18:04:11.912Z"
+  }
+}</pre>
+<pre><span class="cm">-- meta.id is a stable ULID: same id across reconnects,</span>
+<span class="cm">-- rewinds, and replays of a finished session.</span>
+insert into agent_events (id, session_id, type, data, emitted_at)
+values ($1, $2, $3, $4, $5)
+<span class="hl">on conflict (id) do nothing</span>;
+
+<span class="cm">-- ids lead with a timestamp, so the PK stays append-ordered.</span>
+<span class="cm">-- But do NOT use `where id &gt; $cursor` as a cursor: steps in</span>
+<span class="cm">-- different processes can invert on clock skew.</span></pre>
+    </div>
+
+    <h3>Two identities, kept apart on purpose</h3>
+    <p>The HTTP API speaks <b>only</b> durable session ids. Channel addresses stay behind the
+      channel boundary and are never accepted or returned by <code>/eve/v1/session*</code>.
+      That separation is why a Slack thread can outlive a session reset, and why an HTTP
+      client cannot reach into a platform conversation it was never given.</p>
+
+    <h2 id="ship">From dev to production</h2>
+    <p>The loop is <code>eve info</code> → <code>eve dev</code> → <code>eve build</code> →
+      <code>eve start</code>. <code>eve dev</code> boots the server and the terminal UI
+      together; pointed at a URL instead, it drives a deployed agent from your terminal, which
+      is the fastest real smoke test there is.</p>
+
+    <div class="tabs" data-tabs>
+      <div class="tabbar">
+        <button class="on" data-t="0">local</button>
+        <button data-t="1">self-host</button>
+        <button data-t="2">vercel</button>
+      </div>
+<pre class="on"><span class="cm"># what's actually discovered? run this first when confused</span>
+eve info
+
+<span class="cm"># dev server + terminal UI on :2000</span>
+eve dev
+
+<span class="cm"># drive a DEPLOYED agent from the local UI</span>
+eve dev https://your-agent.example.com
+
+<span class="cm"># schedules never fire on cron in dev — dispatch by hand:</span>
+curl -X POST localhost:2000<span class="hl">/eve/v1/dev/schedules/:id</span></pre>
+<pre>eve build                      <span class="cm"># → .output/ (Nitro)</span>
+PORT=3000 eve start --host 0.0.0.0
+
+<span class="cm"># state lives here. MOUNT IT ON PERSISTENT STORAGE.</span>
+<span class="hl">.eve/.workflow-data</span>
+
+<span class="cm"># your proxy must forward BOTH of these, unrewritten:</span>
+/eve/
+<span class="hl">/.well-known/workflow/</span>     <span class="cm"># ← workflow callbacks</span>
+
+<span class="cm"># and vercelOidc() must not be your only authenticator</span></pre>
+<pre>eve link      <span class="cm"># link project, pull env (AI Gateway cred)</span>
+eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span>
+
+<span class="cm"># VERCEL env set → eve build writes .vercel/output</span>
+<span class="cm"># string model ids route through AI Gateway on project</span>
+<span class="cm"># OIDC, so no separate provider key is needed.</span>
+
+<span class="cm"># services wired for you:</span>
+<span class="cm">#   web runtime  → session/stream/channel/callback routes</span>
+<span class="cm">#   Workflow     → durable runs</span>
+<span class="cm">#   Cron         → schedules</span>
+<span class="cm">#   Sandbox      → defaultBackend() picks it automatically</span></pre>
+    </div>
+
+    <p>The two hosts differ in exactly three places: where the build output goes
+      (<code>.vercel/output</code> vs <code>.output/</code>), which Workflow world backs
+      durable state (Vercel Workflow vs the SDK's local on-disk world, or a package like
+      <code>@workflow/world-postgres</code> selected through
+      <code>experimental.workflow.world</code>), and which sandbox backend
+      <code>defaultBackend()</code> resolves to. Everything above those adapters is identical.</p>
+
+    <h2 id="gotchas">Gotchas worth knowing</h2>
+    <ul class="gotchas">
+      <li><b>There is no durable message queue per session.</b> An ID-addressed delivery and a
+        channel delivery both target the session's current command inbox, which the runtime
+        drains best-effort at workflow boundaries and may fold several deliveries into one
+        turn. Send one turn at a time and wait for <code>session.waiting</code>. If your
+        channel can receive bursts, keep your own per-session queue in the channel layer.</li>
+      <li><b><code>meta.id</code> dedupes reconnects, not retries.</b> A retried step re-emits
+        under <em>new</em> ids carrying the same <code>turnId</code>, <code>stepIndex</code>,
+        and <code>sequence</code>. Key idempotency on those coordinates; key stored rows on
+        <code>meta.id</code>.</li>
+      <li><b>Omitting <code>approval</code> means the tool runs unsupervised.</b> The default
+        is <code>never()</code>. Approval is opt-in, so a tool that charges a card or sends an
+        email needs <code>once()</code> or <code>always()</code> written explicitly.</li>
+      <li><b><code>placeholderAuth()</code> is not auth.</b> The scaffolded chain in this repo
+        returns a setup-focused 401 in production by design. Nothing reaches the agent from a
+        browser until it is replaced with Clerk, Auth.js, or your own verifier.</li>
+      <li><b>Skills and state never cross an agent boundary.</b> A subagent's skills are
+        invisible to the root and vice versa, and <code>defineState</code> is never shared with
+        any subagent. Share code through <code>lib/</code>; share data through an external
+        store.</li>
+      <li><b><code>eve dev</code> never fires schedules on cron.</b> Dispatch them manually via
+        the dev-only route <code>POST /eve/v1/dev/schedules/:id</code>. In production, a host
+        that serves HTTP without Nitro's scheduled-task runner compiles fine and then silently
+        never fires them.</li>
+      <li><b><code>instructions.ts</code> runs once, at build time.</b> Being TypeScript, it
+        looks per-session, but eve captures the resulting markdown into the compiled manifest
+        and serves the same prompt to every session forever. Genuinely per-caller instructions
+        need <code>defineDynamic</code>.</li>
+      <li><b>A self-host proxy must forward <code>/.well-known/workflow/</code> too.</b>
+        Forward only <code>/eve/</code> and a session will start and then stall — the workflow
+        callbacks have no way back in.</li>
+      <li><b>Tool output crosses a JSON boundary.</b> No <code>Date</code>, <code>Map</code>,
+        <code>Set</code>, <code>NaN</code>, or cycles. Images must be base64, and compaction
+        replaces file payloads with a text stub — an image is unrecoverable afterwards.</li>
+    </ul>
+
+    <h2 id="faq">FAQ</h2>
+    <dl class="faq">
+      <dt>Do I need a channel file to have an HTTP API?</dt>
+      <dd>No. <code>/eve/v1/session*</code> is mounted by default. You add
+        <code>agent/channels/eve.ts</code> only to override defaults, which in practice means
+        the auth policy or CORS.</dd>
+
+      <dt>How does a Slack thread find its session again?</dt>
+      <dd>The channel calls <code>from(threadTs)</code>. eve looks up the session that
+        currently owns that address and creates one only if nobody does. Ownership is
+        exclusive and movable with <code>rekey()</code>.</dd>
+
+      <dt>What happens if I redeploy while a turn is running?</dt>
+      <dd>The run resumes from the last completed step. Completed steps replay their recorded
+        result and emit nothing; only a step that was mid-execution re-runs.</dd>
+
+      <dt>Is a turn cancellation a failure?</dt>
+      <dd>No. <code>cancel</code> is cooperative and returns <code>"accepted"</code> the moment
+        it is durably queued. You confirm it on the stream as <code>turn.cancelled</code>
+        followed by <code>session.waiting</code>, never as a failure event, and the session
+        accepts the next message normally. Active subagents are cancelled recursively first.</dd>
+
+      <dt>Where does state live when I'm not on Vercel?</dt>
+      <dd>The Workflow SDK's local world persists runs to disk under
+        <code>.eve/.workflow-data</code> and dispatches through the same Nitro-hosted workflow
+        routes. Self-hosted deployments can swap in another world package —
+        <code>@workflow/world-postgres</code>, for instance — via
+        <code>experimental.workflow.world</code> in <code>agent.ts</code>.</dd>
+
+      <dt>Can the model reach my API keys?</dt>
+      <dd>No. Secrets live in the app runtime; the sandbox has no <code>process.env</code>, no
+        Node.js, and no path back. When sandboxed code needs authenticated network access, the
+        credential is injected at the firewall rather than handed to the process.</dd>
+    </dl>
+  </main>
+
+</div>
+
+<script>
+document.querySelectorAll("[data-tabs]").forEach(box => {
+  const btns = box.querySelectorAll(".tabbar button");
+  const panes = box.querySelectorAll("pre");
+  btns.forEach(b => b.addEventListener("click", () => {
+    btns.forEach(x => x.classList.remove("on"));
+    panes.forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    panes[+b.dataset.t].classList.add("on");
+  }));
+});
+</script>
+</body>
+</html>
