@@ -10,7 +10,9 @@
     "build": "eve build",
     "dev": "eve dev",
     "start": "eve start",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.35",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "24.x",
+    "oxfmt": "^0.62.0",
     "typescript": "7.0.2",
     "vercel": "^58.9.0"
   },
