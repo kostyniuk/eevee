@@ -340,6 +340,9 @@
     <a href="#path" class="l2">4. Step</a>
     <a href="#path" class="l2">5. Deliver</a>
     <a href="#slack-flow">Slack, end to end</a>
+    <a href="#slack-flow" class="l2">The inbound gate</a>
+    <a href="#slack-flow" class="l2">Webhook ends early</a>
+    <a href="#slack-flow" class="l2">channel.events</a>
     <a href="#durability">Durability</a>
     <a href="#durability" class="l2">How replay works</a>
     <a href="#runtimes">Two runtimes</a>
@@ -347,6 +350,8 @@
     <a href="#author">What you author</a>
     <a href="#isolation">Isolation rules</a>
     <a href="#stream">The event stream</a>
+    <a href="#stream" class="l2">Emit vs follow</a>
+    <a href="#stream" class="l2">WebSockets</a>
     <a href="#ship">Dev to production</a>
     <a href="#gotchas">Gotchas</a>
     <a href="#faq">FAQ</a>
@@ -362,6 +367,7 @@
       <code>eve/docs/subagents.mdx</code>
       <code>@workflow/core/*.d.ts</code>
       <code>@workflow/world/*.d.ts</code>
+      <code>@workflow/world-local</code>
       <code>workflow-sdk.dev</code>
     </div>
   </nav>
@@ -377,7 +383,8 @@
         step, so it survives crashes and redeploys and can park for days waiting on a human.
         Credentials and your code run in the trusted <em>app runtime</em>; the model's shell
         runs in an isolated <em>sandbox</em> that holds no secrets. Everything the run does is
-        projected onto one replayable NDJSON event stream.
+        projected onto one replayable NDJSON event log: <em>emit</em> appends to that log, then
+        calls channel handlers and hooks <b>in memory</b> — not via a message queue or WebSocket bus.
       </div>
     </header>
 
@@ -395,7 +402,7 @@
   skills/             <span class="cm">← markdown procedures, loaded on demand</span>
   subagents/&lt;id&gt;/     <span class="cm">← a whole nested agent, own defineAgent</span>
   connections/        <span class="cm">← MCP / OpenAPI + credentials</span>
-  hooks/              <span class="cm">← observe-only stream subscribers</span>
+  hooks/              <span class="cm">← observe-only; fire in-process on emit</span>
   schedules/          <span class="cm">← cron. root agent only.</span>
   sandbox/            <span class="cm">← backend + workspace seed</span>
   lib/                <span class="cm">← shared code. import-only, never reaches the sandbox.</span>
@@ -435,12 +442,24 @@ export default eveChannel({
     <span class="hl">placeholderAuth()</span>,   <span class="cm">// 401s in prod until you replace it</span>
   ],
 });</pre>
-<pre><span class="cm">// agent/channels/slack.ts — the entire Slack integration</span>
+<pre><span class="cm">// agent/channels/slack.ts — gate + credentials</span>
 import { connectSlackCredentials } from "@vercel/connect/eve";
 import { slackChannel } from "eve/channels/slack";
 
 export default slackChannel({
   credentials: connectSlackCredentials("slack/eevee"),
+  async onMessage(ctx, message) {
+    if (message.author?.isBot) <span class="hl">return null</span>;
+    if (message.text.trim() === "/new") {
+      await ctx.reset({ reason: "user /new" });
+      await ctx.thread.post("Started a fresh conversation.");
+      <span class="hl">return null</span>;  <span class="cm">// command only — do not wake the model</span>
+    }
+    const isDM = message.raw.channel_type === "im";
+    return isDM || ctx.isBotMentioned() || (await ctx.isSubscribed())
+      ? <span class="hl">{ auth: null }</span>   <span class="cm">// allow (anonymous principal)</span>
+      : null;              <span class="cm">// drop ambient channel noise</span>
+  },
 });</pre>
     </div>
 
@@ -543,14 +562,18 @@ await source.reset({ reason: "Start over" });</pre>
     <details>
       <summary>5 · The channel delivers <span class="where">back to the platform</span></summary>
       <div class="body">
-        <p>Delivery is the channel's decision again. The eve channel streams NDJSON down the
-          open HTTP response. The Slack channel posts into the thread, composing rich
-          messages from the Chat SDK's <b>card-builder components</b>, converted to Block Kit
-          at post time.</p>
+        <p>Delivery is the channel's decision again — and it is usually <b>not</b> "the client
+          is still holding the request open." Emit runs channel
+          <code>events</code> handlers in process; those handlers call the platform (Slack
+          post, Discord edit, Twilio SMS). Separately, the eve HTTP channel also exposes the
+          durable log as NDJSON on <code>GET …/stream</code> for UIs and SDKs. Two fans of the
+          same log, different transports.</p>
         <p>That is the entire extent of eve's relationship to the Chat SDK. Its runtime —
           <code>Chat</code>, <code>Adapter</code>, <code>Thread</code> — is never imported and
           is not reachable from eve's public API. Webhook handling, signature verification,
-          event parsing, and thread management are all eve's own.</p>
+          event parsing, and thread management are all eve's own. WebSockets, when you use
+          them, are only another edge for a custom channel — never the internal link from
+          workflow to those handlers.</p>
       </div>
     </details>
 
@@ -649,10 +672,11 @@ await source.reset({ reason: "Start over" });</pre>
         <p><b>3. A handler decides whether to answer.</b> Handlers run in strict precedence:
           <code>onAppMention</code> → <code>onMessage</code> → <code>onEvent</code> → the
           built-in default, and only the first available one runs. Returning
-          <code>{ auth }</code> dispatches, <code>null</code> drops the message entirely, and
-          <code>{ auth, context }</code> dispatches with extra background injected. eve discards
-          messages authored by the installed app before any of this, so the agent cannot reply
-          to itself in a loop.</p>
+          <code>{ auth }</code> dispatches, bare <code>null</code> drops the message entirely,
+          and <code>{ auth, context }</code> dispatches with extra background injected.
+          <code>{ auth: null }</code> still dispatches — the principal is just anonymous (see
+          <a href="#gate">The inbound gate</a>). eve discards messages authored by the installed
+          app before any of this, so the agent cannot reply to itself in a loop.</p>
         <p><b>4. The thread is resolved to a session.</b> The channel calls
           <code>from(thread_ts).send(text)</code>. If a live session already owns that thread,
           this is a follow-up turn on the existing conversation with full history. If not, a
@@ -689,6 +713,161 @@ await source.reset({ reason: "Start over" });</pre>
         conversation, attributed by Slack user id, and keep repeated mentions incremental
         instead of re-sending the whole thread each time.</div>
     </div>
+
+    <h3 id="gate" class="new">The inbound gate: what stops a request</h3>
+    <p>Message hooks are a <b>gate</b>, not the agent. Side effects you run inside the hook
+      (<code>ctx.reset</code>, <code>ctx.cancel</code>, <code>ctx.thread.post</code>) happen
+      during the webhook. The <b>return value</b> is a separate decision: whether this Slack
+      message becomes a model turn.</p>
+
+    <table class="grid new">
+      <thead>
+        <tr><th>Return</th><th>Agent runs?</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="k">null</td>
+          <td>No</td>
+          <td>Drop or consume the message. Bots, ambient chatter, slash commands you handled yourself.</td>
+        </tr>
+        <tr>
+          <td class="k">{ auth: null }</td>
+          <td><b>Yes</b></td>
+          <td>Dispatch with <em>no</em> principal. <code>auth: null</code> is not “deny” — it is “allow anonymously.”</td>
+        </tr>
+        <tr>
+          <td class="k">{ auth: principal }</td>
+          <td>Yes</td>
+          <td>Dispatch with identity (e.g. <code>defaultSlackAuth(message, ctx)</code>).</td>
+        </tr>
+        <tr>
+          <td class="k">{ auth, context }</td>
+          <td>Yes</td>
+          <td>Same as dispatch, plus inject extra background into history.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>Rule of thumb: <b><code>null</code> stops; any object with <code>auth</code> allows</b>
+      — even when that value is <code>null</code>.</p>
+
+    <details class="new">
+      <summary>Side effects vs return value <span class="where">reset · cancel · thread.post</span></summary>
+      <div class="body">
+        <p><code>ctx.thread.post(...)</code> is a direct Slack Web API call. It updates the
+          UI immediately and never wakes the model by itself.</p>
+        <p><code>ctx.reset({ reason })</code> retires the session that owns the thread
+          (including an in-flight turn). It does not start a new turn. What you return next
+          decides whether <em>this</em> message is discarded or becomes turn&nbsp;1 of a fresh
+          session:</p>
+        <pre><span class="cm">// /new as a pure command</span>
+await ctx.reset({ reason: "user /new" });
+await ctx.thread.post("Started a fresh conversation.");
+return null;                    <span class="cm">// agent never sees "/new"</span>
+
+<span class="cm">// reset, then treat this same message as turn 1 of the new session</span>
+await ctx.reset({ reason: "user /new" });
+return { auth: null };          <span class="cm">// agent sees the message</span></pre>
+        <p><code>ctx.cancel()</code> stops the current turn. Cancellation never sends input;
+          return <code>{ auth }</code> if the new message should replace it (debounce), or
+          <code>null</code> for a Stop button that only aborts.</p>
+        <table class="grid">
+          <thead>
+            <tr><th>Pattern</th><th>In-flight turn</th><th>This message → agent?</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="k">cancel + { auth }</td><td>stopped</td><td>yes (replacement)</td></tr>
+            <tr><td class="k">cancel + null</td><td>stopped</td><td>no</td></tr>
+            <tr><td class="k">reset + null</td><td>retired</td><td>no (command)</td></tr>
+            <tr><td class="k">reset + { auth }</td><td>retired</td><td>yes (turn 1)</td></tr>
+            <tr><td class="k">thread.post only + null</td><td>unchanged</td><td>no</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <h3 id="webhook-lifetime" class="new">The webhook ends early; the turn does not</h3>
+    <p>A webhook is ordinary HTTP with an inverted caller: Slack POSTs <em>you</em> when
+      something happens. Same transport as a REST API; different who initiates.</p>
+    <p>Two different meanings of “available” get confused here:</p>
+    <ul class="gotchas">
+      <li><b>The route must be reachable.</b> Production must accept new POSTs to
+        <code>/eve/v1/slack</code>. If the deployment is down, Slack retries or drops events —
+        same as any public API.</li>
+      <li><b>One request does not last the whole agent turn.</b> The webhook can return
+        <code>200</code> in seconds (“got the event, work started”). The durable workflow
+        keeps running, parks for HITL, survives redeploys, and later posts back via
+        <em>separate</em> HTTP calls to Slack’s Web API. Progress and the final answer are not
+        the body of the original webhook response.</li>
+    </ul>
+    <pre class="plain">t=0    Slack POST /eve/v1/slack          <span class="cm">← request A (brief)</span>
+       verify · onMessage · start turn
+       respond 200 OK to Slack
+
+t=1s   workflow still running             <span class="cm">← not request A</span>
+t=5s   events → Slack "Working…"          <span class="cm">← outbound REST</span>
+t=20s  events → Slack final answer        <span class="cm">← outbound REST</span></pre>
+    <p>Contrast the browser/HTTP channel: <code>GET /eve/v1/session/:id/stream</code> can hold
+      an NDJSON connection open while tokens stream. Slack’s path is webhook-in, REST-out —
+      no persistent Slack↔eve socket for the normal case.</p>
+
+    <h3 id="channel-events" class="new">channel.events are in-app callbacks, not listeners</h3>
+    <p>Nothing on Slack “subscribes” to your agent stream. When the durable turn emits
+      <code>turn.started</code> or <code>message.completed</code>, the <b>eve runtime invokes
+      a function you registered</b> on the channel. That function then calls Slack over HTTP
+      if it wants the UI to update.</p>
+    <pre class="plain">Agent turn emits message.completed
+        │
+        ▼
+  channel.events["message.completed"] ?
+        │
+   you wrote it ──────────► your function (log, post, metrics…)
+   you didn't   ──────────► defaultEvents["message.completed"]
+                            (post reply in thread, skip tool-calls)</pre>
+    <p>That is the same shape as an <code>onClick</code> registry — not a network listener and
+      not a second process. It is also <em>not</em> the same thing as
+      <code>agent/hooks/</code>: those are observe-only stream subscribers that cannot decide
+      delivery. Channel <code>events</code> own how this surface shows progress and replies.</p>
+
+    <details class="new">
+      <summary>Default delivery map + how to extend it <span class="where">eve/channels/slack · defaultEvents</span></summary>
+      <div class="body">
+        <p>Defaults are exported. Prefer composing over reverse-engineering:</p>
+        <pre>import {
+  slackChannel,
+  defaultEvents,
+  defaultSlackAuth,
+} from "eve/channels/slack";
+
+export default slackChannel({
+  credentials: connectSlackCredentials("slack/eevee"),
+  events: {
+    ...defaultEvents,
+    async "message.completed"(eventData, channel, ctx) {
+      await logSomewhere(eventData);           <span class="cm">// your side effect</span>
+      return defaultEvents["message.completed"]?.(eventData, channel, ctx);
+    },
+  },
+});</pre>
+        <p>Overriding a key <b>replaces</b> that event’s default. If you omit the call into
+          <code>defaultEvents</code>, you also own Slack delivery for that event.</p>
+        <table class="grid">
+          <thead>
+            <tr><th>Event / hook</th><th>Default Slack effect</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="k">onAppMention / onDirectMessage</td><td>auth from actor + typing “Thinking…” + dispatch</td></tr>
+            <tr><td class="k">turn.started</td><td>typing “Working…”</td></tr>
+            <tr><td class="k">reasoning.appended</td><td>typing = first reasoning line (throttled ~5s)</td></tr>
+            <tr><td class="k">actions.requested</td><td>typing = tool/action label</td></tr>
+            <tr><td class="k">message.completed</td><td>if <code>finishReason === "tool-calls"</code>, stash for next typing, do not post; else <code>thread.post</code> final text</td></tr>
+            <tr><td class="k">turn.failed / session.failed</td><td>error text in thread</td></tr>
+            <tr><td class="k">authorization.*</td><td>public status + ephemeral sign-in / update</td></tr>
+            <tr><td class="k">input.requested</td><td>HITL as buttons / selects</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
 
     <h2 id="durability">What durability actually buys you</h2>
     <p>Kill the process, hit a timeout, or redeploy mid-turn, and the run resumes from the
@@ -934,7 +1113,8 @@ export default defineHook({
     async "message.completed"(event) { <span class="cm">/* ... */</span> },
   },
 });
-<span class="cm">// At-least-once: a replayed step re-fires hooks under new ids.</span></pre>
+<span class="cm">// Fires in-process on emit (not a stream reader).</span>
+<span class="cm">// At-least-once: an interrupted step re-runs and re-emits under new ids.</span></pre>
 <pre><span class="cm">// agent/subagents/researcher/agent.ts</span>
 import { defineAgent } from "eve";
 
@@ -985,11 +1165,141 @@ export default defineAgent({
       sensitive tool still needs its own <code>approval</code> policy on the other side of it.</p>
 
     <h2 id="stream">One stream for everything</h2>
-    <p>Every observable thing a run does lands on a single newline-delimited JSON stream:
+    <p>Every observable thing a run does lands on a single newline-delimited JSON log:
       <code>turn.started</code> → <code>step.started</code> → <code>actions.requested</code> →
       <code>action.result</code> → <code>message.appended</code>… →
-      <code>turn.completed</code> → <code>session.waiting</code>. The same stream feeds the
-      terminal UI, <code>useEveAgent</code>, your hooks, and any consumer you point at it.</p>
+      <code>turn.completed</code> → <code>session.waiting</code>. That log is the source of
+      truth. <em>How</em> different pieces of the system see it is not the same for everyone —
+      and that distinction is the part people usually get wrong.</p>
+
+    <h3 id="emit" class="new">Emit is a trigger, not a message queue</h3>
+    <p>When the harness reaches a lifecycle moment, it calls <b>emit</b>. Emit does two jobs
+      that look similar from the outside but are completely different under the hood:</p>
+
+    <ol style="padding-left:20px;max-width:680px;margin:12px 0;">
+      <li style="margin-bottom:8px;"><b>Append</b> the stamped event to the durable session
+        stream (Workflow world's <code>streams.write</code> — an append-only log).</li>
+      <li style="margin-bottom:8px;"><b>Call registered handlers in memory</b>, same process,
+        same stack of awaits: channel <code>events</code> first, then metadata projection,
+        then agent hooks, then dynamic resolvers.</li>
+    </ol>
+
+    <p>There is no SQS, no RabbitMQ, no worker that later dequeues
+      <code>message.completed</code> and runs your Slack post. Channel handlers and
+      <code>defineHook</code> bodies are ordinary async functions on the emit path — closer
+      to an ordered <code>EventEmitter</code> that happens to journal every event first than
+      to a broker.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 340" role="img" aria-label="Emit path versus stream-follow path">
+        <defs>
+          <marker id="ah2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="#87867F"/>
+          </marker>
+          <marker id="ahc2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="#D97757"/>
+          </marker>
+        </defs>
+        <text class="lane" x="24" y="18">producer path · in-process</text>
+        <rect class="bx-a" x="24" y="32" width="140" height="40" rx="8"/>
+        <text class="ttl" x="38" y="50">harness</text>
+        <text class="sub" x="38" y="64">model / tools</text>
+        <line class="ln" x1="164" y1="52" x2="198" y2="52" marker-end="url(#ah2)"/>
+        <rect class="bx" x="200" y="32" width="110" height="40" rx="8"/>
+        <text class="ttl" x="214" y="50">emit()</text>
+        <text class="sub" x="214" y="64">stamp + write</text>
+        <line class="ln-a" x1="310" y1="52" x2="348" y2="52" marker-end="url(#ahc2)"/>
+        <rect class="bx" x="350" y="24" width="260" height="56" rx="8"/>
+        <text class="ttl" x="364" y="46">durable log append</text>
+        <text class="sub" x="364" y="62">NDJSON chunk · meta.id · startIndex</text>
+
+        <line class="ln-a" x1="255" y1="72" x2="255" y2="118" marker-end="url(#ahc2)"/>
+        <rect class="bx" x="160" y="122" width="190" height="52" rx="8"/>
+        <text class="ttl" x="174" y="144">channel.events[…](…)</text>
+        <text class="sub" x="174" y="160">await · same process</text>
+        <line class="ln" x1="350" y1="148" x2="388" y2="148" marker-end="url(#ah2)"/>
+        <rect class="bx" x="390" y="122" width="220" height="52" rx="8"/>
+        <text class="ttl" x="404" y="144">hooks → resolvers</text>
+        <text class="sub" x="404" y="160">still in-process · ordered</text>
+
+        <line class="dsh" x1="24" y1="198" x2="616" y2="198"/>
+        <text class="lane" x="24" y="218">consumer path · separate readers of the log</text>
+        <rect class="bx-a" x="24" y="236" width="180" height="48" rx="8"/>
+        <text class="ttl" x="38" y="256">GET …/stream</text>
+        <text class="sub" x="38" y="270">NDJSON · startIndex</text>
+        <line class="ln" x1="204" y1="260" x2="248" y2="260" marker-end="url(#ah2)"/>
+        <rect class="bx" x="250" y="236" width="160" height="48" rx="8"/>
+        <text class="ttl" x="264" y="256">useEveAgent / TUI</text>
+        <text class="sub" x="264" y="270">follow or catch-up</text>
+        <line class="ln" x1="410" y1="260" x2="454" y2="260" marker-end="url(#ah2)"/>
+        <rect class="bx" x="456" y="236" width="154" height="48" rx="8"/>
+        <text class="ttl" x="470" y="256">your ingest job</text>
+        <text class="sub" x="470" y="270">dedupe on meta.id</text>
+        <text class="sub" x="24" y="318">Local world live-follow polls storage (~100ms) while the HTTP body stays open —
+          more like tailing a file than AMQP push.</text>
+      </svg>
+      <figcaption>Clay path: side effects fire at write time. Gray path: readers of the same
+        log, optional and independent. Neither path is a competing-consumer queue.</figcaption>
+    </figure>
+
+    <details class="new" open>
+      <summary>Dispatch order is structural <span class="where">sessions-runs-and-streaming</span>
+        <span class="newtag">added</span></summary>
+      <div class="body">
+        <p>Every stream event runs four steps, always in this order:</p>
+        <pre>1. channel events["…"] handler   <span class="cm">// may mutate adapter state</span>
+2. metadata projection             <span class="cm">// re-eval channel.metadata(state)</span>
+3. authored hooks                  <span class="cm">// agent/hooks/*</span>
+4. dynamic resolvers               <span class="cm">// tools / skills / instructions</span></pre>
+        <p>By the time a hook or resolver reads <code>ctx.channel.metadata</code>, the channel
+          has already updated its state and the projection is current. That is why Slack can
+          post a typing indicator on <code>turn.started</code> without a separate fan-out
+          pipeline: the channel is not <em>subscribed</em> to the HTTP stream; it is
+          <em>invoked</em> as the first step of emit.</p>
+        <p>Channel handlers and agent hooks are structurally the same shape. Use the channel
+          map for adapter-specific delivery (post to Slack, edit a Discord message). Use
+          <code>defineHook</code> for agent-wide observation (audit, metrics) that should fire
+          no matter which channel started the session. Both fire when both are registered;
+          neither dequeues from a broker.</p>
+      </div>
+    </details>
+
+    <details class="new">
+      <summary>If you know SQS or RabbitMQ <span class="where">comparison</span>
+        <span class="newtag">added</span></summary>
+      <div class="body">
+        <p><b>SQS</b> is a competing-consumer queue: long-poll for work, process, delete.
+          Messages leave the queue for other workers once taken.</p>
+        <p><b>RabbitMQ</b> is a broker that <em>pushes</em> over a persistent AMQP connection;
+          consumers ack deliveries. Fan-out is a routing choice you configure.</p>
+        <p><b>Eve's session stream</b> is an <b>append-only log</b> (many readers can follow
+          from a cursor; nothing is deleted on read) plus <b>inline side effects on emit</b>
+          for channels and hooks. External clients hold an open HTTP NDJSON response and
+          reconnect with <code>startIndex</code> when the transport drops — more like tailing
+          a journal than claiming a work item.</p>
+        <p>There <em>is</em> queue-shaped machinery elsewhere — the session's command inbox,
+          Workflow dispatch for steps and parked hooks — but that moves <em>turns</em> and
+          <em>steps</em>, not "deliver this stream event to channel handlers."</p>
+      </div>
+    </details>
+
+    <details class="new">
+      <summary id="websockets">Where WebSockets actually fit <span class="where">WS() routes</span>
+        <span class="newtag">added</span></summary>
+      <div class="body">
+        <p>WebSockets are an optional <b>edge transport</b> for custom channels, not the bus
+          between workflow and channel handlers. A <code>WS()</code> route still ends in
+          <code>from(address).send(text)</code> on inbound — the same entry the Slack webhook
+          uses. Outbound over that socket is your job if you want it (write frames from an
+          <code>events</code> handler); eve does not auto-pipe the workflow stream over the
+          socket.</p>
+        <p>The default eve surface is HTTP: <code>POST</code> to create/send,
+          <code>GET …/stream</code> for NDJSON. Platform channels (Slack, Telegram, Twilio)
+          are webhook in and platform HTTP API out. Prefer <code>WS()</code> lifecycle hooks
+          over <code>createWebSocketUpgradeServer()</code>, which exists only for third-party
+          SDKs that insist on binding Node's <code>upgrade</code> event.</p>
+      </div>
+    </details>
 
     <details class="new">
       <summary>What is NDJSON? <span class="newtag">added</span></summary>
@@ -1130,6 +1440,14 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
         drains best-effort at workflow boundaries and may fold several deliveries into one
         turn. Send one turn at a time and wait for <code>session.waiting</code>. If your
         channel can receive bursts, keep your own per-session queue in the channel layer.</li>
+      <li><b>Channel handlers are not queue consumers either.</b> They run in memory on the
+        emit path after the event is appended to the durable log. Do not model Slack delivery
+        as "subscribe to the stream and post" — model it as "emit invokes
+        <code>events[&quot;message.completed&quot;]</code>, which posts." Retries re-emit under
+        <em>new</em> <code>meta.id</code>s, so those handlers can run again; make outbound
+        posts idempotent.</li>
+      <li><b>WebSockets are not the workflow↔channel bus.</b> Optional custom-channel edge
+        only. Default clients use HTTP NDJSON; Slack-class platforms use webhooks + REST.</li>
       <li><b><code>meta.id</code> dedupes reconnects, not retries.</b> A retried step re-emits
         under <em>new</em> ids carrying the same <code>turnId</code>, <code>stepIndex</code>,
         and <code>sequence</code>. Key idempotency on those coordinates; key stored rows on
@@ -1158,6 +1476,13 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
       <li><b>Tool output crosses a JSON boundary.</b> No <code>Date</code>, <code>Map</code>,
         <code>Set</code>, <code>NaN</code>, or cycles. Images must be base64, and compaction
         replaces file payloads with a text stub — an image is unrecoverable afterwards.</li>
+      <li><b><code>{ auth: null }</code> is allow, not deny.</b> The gate is the shape of the
+        return: bare <code>null</code> drops the message; an object with an <code>auth</code>
+        field dispatches. A null principal only means anonymous — the agent still runs.</li>
+      <li><b>Overriding <code>events["message.completed"]</code> replaces delivery.</b> Spread
+        <code>defaultEvents</code> and call through, or you will log the answer and never post
+        it to Slack. Channel <code>events</code> are not the same as
+        <code>agent/hooks/</code>.</li>
     </ul>
 
     <h2 id="faq">FAQ</h2>
@@ -1171,6 +1496,30 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
       <dd>The channel calls <code>from(threadTs)</code>. eve looks up the session that
         currently owns that address and creates one only if nobody does. Ownership is
         exclusive and movable with <code>rekey()</code>.</dd>
+
+      <dt>Is a webhook different from a REST API?</dt>
+      <dd>Same HTTP. Different who calls whom. REST is usually client → you on demand. A
+        webhook is provider → you when an event happens (Slack Events API →
+        <code>/eve/v1/slack</code>). Outbound replies are ordinary REST the other way: your
+        app → Slack Web API.</dd>
+
+      <dt>Does the webhook stay open until the agent finishes?</dt>
+      <dd>No. The inbound request can return quickly after the turn is started. Status updates
+        and the final reply are later outbound calls from channel <code>events</code> handlers
+        (or <code>thread.post</code>) while the durable workflow runs independently.</dd>
+
+      <dt>What is the difference between <code>return null</code> and
+        <code>return { auth: null }</code>?</dt>
+      <dd><code>null</code> stops the request — no agent turn.
+        <code>{ auth: null }</code> allows it with no authenticated principal. Use the latter
+        for DMs/mentions when you do not need a stamped Slack identity; use
+        <code>defaultSlackAuth</code> when you do.</dd>
+
+      <dt>Where do “Thinking…” and “Working…” come from?</dt>
+      <dd>Default channel <code>events</code> (exported as <code>defaultEvents</code>) map
+        stream events to Slack typing/posts. They run in-process when the runtime emits those
+        events; they are not Slack-side listeners. Wrap them when you need logging or custom
+        UX.</dd>
 
       <dt>What happens if I redeploy while a turn is running?</dt>
       <dd>The run resumes from the last completed step. Completed steps replay their recorded
@@ -1193,6 +1542,18 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
       <dd>No. Secrets live in the app runtime; the sandbox has no <code>process.env</code>, no
         Node.js, and no path back. When sandboxed code needs authenticated network access, the
         credential is injected at the firewall rather than handed to the process.</dd>
+
+      <dt>Is emit like SQS / RabbitMQ for channel delivery?</dt>
+      <dd>No. Emit appends to an append-only log, then <code>await</code>s channel handlers and
+        hooks in process. There is no competing-consumer queue and no broker push for those
+        handlers. External UIs follow the log over HTTP NDJSON; platform delivery is whatever
+        the handler does next (usually a REST call).</dd>
+
+      <dt>When would I use <code>WS()</code>?</dt>
+      <dd>When your custom surface genuinely needs a duplex socket (voice, proprietary client).
+        Inbound still becomes <code>from(address).send(…)</code>; outbound frames are yours to
+        write from <code>events</code> if you want them. Prefer that over inventing a second
+        internal event bus.</dd>
     </dl>
   </main>
 
