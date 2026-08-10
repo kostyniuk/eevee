@@ -1,0 +1,53 @@
+name: eevee-local
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: eevee
+      POSTGRES_USER: eevee
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eevee -d eevee"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        password=$$(cat /run/secrets/redis_password)
+        printf 'user default on >%s ~* &* +@all\n' "$$password" > /tmp/users.acl
+        exec redis-server --appendonly yes --aclfile /tmp/users.acl
+    secrets:
+      - redis_password
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres_password
+  redis_password:
+    file: ./.secrets/redis_password
