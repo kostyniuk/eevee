@@ -1,4 +1,4 @@
-import { eveChannel } from "eve/channels/eve";
+import { defaultEveAuth, eveChannel } from "eve/channels/eve";
 import { localDev, placeholderAuth, vercelOidc } from "eve/channels/auth";
 
 export default eveChannel({
@@ -12,4 +12,23 @@ export default eveChannel({
     // or use none() for a public demo.
     placeholderAuth(),
   ],
+  onMessage(ctx, message) {
+    console.error("[eve] onMessage", {
+      sessionId: ctx.eve.sessionId,
+      caller: ctx.eve.caller?.principalId ?? "anonymous",
+      preview: typeof message === "string" ? message.slice(0, 80) : "[parts]",
+    });
+    return { auth: defaultEveAuth(ctx) };
+  },
+  events: {
+    "turn.started"(data, _ch, ctx) {
+      console.error("[eve] turn.started", ctx.session.id, data);
+    },
+    "message.completed"(data, _ch, ctx) {
+      console.error("[eve] message.completed", ctx.session.id, data);
+    },
+    "turn.failed"(data, _ch, ctx) {
+      console.error("[eve] turn.failed", ctx.session.id, data);
+    },
+  },
 });
