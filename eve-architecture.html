@@ -334,24 +334,24 @@
     <div class="label">On this page</div>
     <a href="#shape">The shape of an app</a>
     <a href="#path">The request path</a>
-    <a href="#path" class="l2">1. Route</a>
-    <a href="#path" class="l2">2. Address</a>
-    <a href="#path" class="l2">3. Turn</a>
-    <a href="#path" class="l2">4. Step</a>
-    <a href="#path" class="l2">5. Deliver</a>
+    <a href="#route" class="l2">1. Route</a>
+    <a href="#address" class="l2">2. Address</a>
+    <a href="#turn" class="l2">3. Turn</a>
+    <a href="#step" class="l2">4. Step</a>
+    <a href="#deliver" class="l2">5. Deliver</a>
     <a href="#slack-flow">Slack, end to end</a>
-    <a href="#slack-flow" class="l2">The inbound gate</a>
-    <a href="#slack-flow" class="l2">Webhook ends early</a>
-    <a href="#slack-flow" class="l2">channel.events</a>
+    <a href="#gate" class="l2">The inbound gate</a>
+    <a href="#webhook-lifetime" class="l2">Webhook ends early</a>
+    <a href="#channel-events" class="l2">channel.events</a>
     <a href="#durability">Durability</a>
-    <a href="#durability" class="l2">How replay works</a>
+    <a href="#replay" class="l2">How replay works</a>
     <a href="#runtimes">Two runtimes</a>
     <a href="#sandbox-detail" class="l2">Inside the sandbox</a>
     <a href="#author">What you author</a>
     <a href="#isolation">Isolation rules</a>
     <a href="#stream">The event stream</a>
-    <a href="#stream" class="l2">Emit vs follow</a>
-    <a href="#stream" class="l2">WebSockets</a>
+    <a href="#emit" class="l2">Emit vs follow</a>
+    <a href="#websockets" class="l2">WebSockets</a>
     <a href="#ship">Dev to production</a>
     <a href="#gotchas">Gotchas</a>
     <a href="#faq">FAQ</a>
@@ -365,16 +365,16 @@
       <code>eve/docs/tools/*</code>
       <code>eve/docs/sandbox.mdx</code>
       <code>eve/docs/subagents.mdx</code>
-      <code>@workflow/core/*.d.ts</code>
-      <code>@workflow/world/*.d.ts</code>
-      <code>@workflow/world-local</code>
+      <code>eve/dist/src/compiled/@workflow/core</code>
+      <code>eve/dist/src/compiled/@workflow/world</code>
+      <code>eve@0.31.3</code>
       <code>workflow-sdk.dev</code>
     </div>
   </nav>
 
   <main>
     <header>
-      <div class="eyebrow">Framework internals · architecture explainer</div>
+      <div class="eyebrow">Framework internals · architecture explainer · verified against eve 0.31.3</div>
       <h1>How <code>eve</code> works</h1>
       <div class="tldr" id="tldr">
         <b>TL;DR</b> — An eve app is a Nitro HTTP server whose routes come entirely from
@@ -382,9 +382,11 @@
         That session runs each turn as a Workflow SDK workflow that checkpoints at every model
         step, so it survives crashes and redeploys and can park for days waiting on a human.
         Credentials and your code run in the trusted <em>app runtime</em>; the model's shell
-        runs in an isolated <em>sandbox</em> that holds no secrets. Everything the run does is
-        projected onto one replayable NDJSON event log: <em>emit</em> appends to that log, then
-        calls channel handlers and hooks <b>in memory</b> — not via a message queue or WebSocket bus.
+        normally runs in an isolated <em>sandbox</em>, although the local <code>just-bash</code>
+        fallback is a compatibility shim rather than a security boundary. Two logs do different
+        jobs: a workflow journal makes execution durable, while a session NDJSON stream exposes
+        what the run did. <em>Emit</em> appends to the session stream, then calls channel handlers
+        and hooks <b>in memory</b> — not through a message queue or WebSocket bus.
       </div>
     </header>
 
@@ -472,7 +474,7 @@ export default slackChannel({
       channels know nothing about the model loop, and the model loop knows nothing about
       HTTP.</p>
 
-    <details open>
+    <details id="route" open>
       <summary>1 · Nitro routes the request <span class="where">the HTTP host</span></summary>
       <div class="body">
         <p>Nitro hosts the HTTP routes and the workflow entrypoints. That is the full extent
@@ -508,7 +510,7 @@ export default slackChannel({
       </div>
     </details>
 
-    <details>
+    <details id="address">
       <summary>2 · The channel normalizes and addresses <span class="where">agent/channels/*.ts</span></summary>
       <div class="body">
         <p>A channel has exactly three jobs: verify and parse the platform payload into a
@@ -529,7 +531,7 @@ await source.reset({ reason: "Start over" });</pre>
       </div>
     </details>
 
-    <details>
+    <details id="turn">
       <summary>3 · The session starts a turn <span class="where">durable workflow</span></summary>
       <div class="body">
         <p>A <b>session</b> is the whole durable conversation; it lives 30 days by default
@@ -545,7 +547,7 @@ await source.reset({ reason: "Start over" });</pre>
       </div>
     </details>
 
-    <details>
+    <details id="step">
       <summary>4 · Steps run and checkpoint <span class="where">the durability unit</span></summary>
       <div class="body">
         <p>A <b>step</b> is one model call plus the tool calls it makes, and it is the unit
@@ -559,7 +561,7 @@ await source.reset({ reason: "Start over" });</pre>
       </div>
     </details>
 
-    <details>
+    <details id="deliver">
       <summary>5 · The channel delivers <span class="where">back to the platform</span></summary>
       <div class="body">
         <p>Delivery is the channel's decision again — and it is usually <b>not</b> "the client
@@ -568,11 +570,11 @@ await source.reset({ reason: "Start over" });</pre>
           post, Discord edit, Twilio SMS). Separately, the eve HTTP channel also exposes the
           durable log as NDJSON on <code>GET …/stream</code> for UIs and SDKs. Two fans of the
           same log, different transports.</p>
-        <p>That is the entire extent of eve's relationship to the Chat SDK. Its runtime —
-          <code>Chat</code>, <code>Adapter</code>, <code>Thread</code> — is never imported and
-          is not reachable from eve's public API. Webhook handling, signature verification,
-          event parsing, and thread management are all eve's own. WebSockets, when you use
-          them, are only another edge for a custom channel — never the internal link from
+        <p>That is the extent of the <b>first-class Slack channel's</b> relationship to the
+          Chat SDK: its webhook handling, signature verification, event parsing, and thread
+          management are eve's own. This is not true of <code>eve/channels/chat-sdk</code>,
+          whose purpose is to accept Chat SDK adapters and state stores. WebSockets, when you
+          use them, are only another edge for a custom channel — never the internal link from
           workflow to those handlers.</p>
       </div>
     </details>
@@ -626,7 +628,7 @@ await source.reset({ reason: "Start over" });</pre>
 
         <rect class="bx" x="30" y="194" width="330" height="46" rx="8"/>
         <text class="ttl" x="46" y="214">slackChannel</text>
-        <text class="sub" x="46" y="229">verify signature → onAppMention → { auth }</text>
+        <text class="sub" x="46" y="229">verify signature → onMessage → { auth }</text>
 
         <rect class="bx" x="30" y="274" width="330" height="46" rx="8"/>
         <text class="ttl" x="46" y="294">from(thread_ts).send(text)</text>
@@ -669,9 +671,14 @@ await source.reset({ reason: "Start over" });</pre>
           Connect's <code>webhookVerifier</code> before anything else runs. Identity is derived
           from that verified signature — never from a field in the body, which is
           attacker-controlled.</p>
-        <p><b>3. A handler decides whether to answer.</b> Handlers run in strict precedence:
-          <code>onAppMention</code> → <code>onMessage</code> → <code>onEvent</code> → the
-          built-in default, and only the first available one runs. Returning
+        <p><b>3. A handler decides whether to answer.</b> Dispatch depends on the event type.
+          Mentions use <code>onAppMention</code> → <code>onMessage</code> →
+          <code>onEvent</code> → the built-in default; direct messages use
+          <code>onDirectMessage</code> → <code>onMessage</code> → <code>onEvent</code> → the
+          built-in default. Only the first available handler runs. In this repo both paths
+          deliberately meet in <code>onMessage</code>; adding <code>onDirectMessage</code>
+          later would take precedence and must preserve the <code>/new</code> behavior.
+          Returning
           <code>{ auth }</code> dispatches, bare <code>null</code> drops the message entirely,
           and <code>{ auth, context }</code> dispatches with extra background injected.
           <code>{ auth: null }</code> still dispatches — the principal is just anonymous (see
@@ -713,6 +720,13 @@ await source.reset({ reason: "Start over" });</pre>
         conversation, attributed by Slack user id, and keep repeated mentions incremental
         instead of re-sending the whole thread each time.</div>
     </div>
+
+    <p><code>threadContext</code> and <code>ctx.isSubscribed()</code> also depend on Slack
+      configuration, not only TypeScript. Public channels need the <code>message.channels</code>
+      event and <code>channels:history</code> bot scope; private channels need the corresponding
+      <code>message.groups</code> event and <code>groups:history</code>. A failed history lookup
+      is logged and swallowed, so missing scopes can look like an empty thread or an
+      unsubscribed conversation rather than a hard failure.</p>
 
     <h3 id="gate" class="new">The inbound gate: what stops a request</h3>
     <p>Message hooks are a <b>gate</b>, not the agent. Side effects you run inside the hook
@@ -822,7 +836,7 @@ t=20s  events → Slack final answer        <span class="cm">← outbound REST</
   channel.events["message.completed"] ?
         │
    you wrote it ──────────► your function (log, post, metrics…)
-   you didn't   ──────────► defaultEvents["message.completed"]
+   you didn't   ──────────► eve's internal default
                             (post reply in thread, skip tool-calls)</pre>
     <p>That is the same shape as an <code>onClick</code> registry — not a network listener and
       not a second process. It is also <em>not</em> the same thing as
@@ -830,27 +844,24 @@ t=20s  events → Slack final answer        <span class="cm">← outbound REST</
       delivery. Channel <code>events</code> own how this surface shows progress and replies.</p>
 
     <details class="new">
-      <summary>Default delivery map + how to extend it <span class="where">eve/channels/slack · defaultEvents</span></summary>
+      <summary>Default delivery map + how overrides work <span class="where">eve/channels/slack</span></summary>
       <div class="body">
-        <p>Defaults are exported. Prefer composing over reverse-engineering:</p>
-        <pre>import {
-  slackChannel,
-  defaultEvents,
-  defaultSlackAuth,
-} from "eve/channels/slack";
-
-export default slackChannel({
+        <p>The defaults are internal in eve 0.31.3: <code>defaultEvents</code> is not exported
+          from <code>eve/channels/slack</code>. Overriding a key therefore <b>replaces</b> that
+          event's behavior, and there is no public default handler to call through to. If you
+          customize <code>message.completed</code>, you must perform the Slack post yourself:</p>
+        <pre>export default slackChannel({
   credentials: connectSlackCredentials("slack/eevee"),
   events: {
-    ...defaultEvents,
-    async "message.completed"(eventData, channel, ctx) {
-      await logSomewhere(eventData);           <span class="cm">// your side effect</span>
-      return defaultEvents["message.completed"]?.(eventData, channel, ctx);
+    async "message.completed"(eventData, channel) {
+      await logSomewhere(eventData);            <span class="cm">// your side effect</span>
+      if (eventData.finishReason === "tool-calls") return;
+      if (eventData.message) {
+        await channel.thread.post(eventData.message); <span class="cm">// you own delivery</span>
+      }
     },
   },
 });</pre>
-        <p>Overriding a key <b>replaces</b> that event’s default. If you omit the call into
-          <code>defaultEvents</code>, you also own Slack delivery for that event.</p>
         <table class="grid">
           <thead>
             <tr><th>Event / hook</th><th>Default Slack effect</th></tr>
@@ -880,19 +891,28 @@ export default slackChannel({
     <div class="callout">
       <span class="ico">★</span>
       <div>Make non-idempotent side effects — charges, emails, outbound posts — idempotent,
-        or gate them behind an <code>approval</code> policy. Everything the interrupted
-        attempt already wrote to the stream stays there, and the retry emits its own events
-        with fresh ids, so a consumer sees both attempts and nothing records which one won.</div>
+        or gate them behind an <code>approval</code> policy. The Slack defaults do not dedupe:
+        if a retry after <code>message.completed</code> would be unacceptable, own that event
+        handler and keep a durable seen-set keyed by <code>turnId + stepIndex + sequence</code>.
+        Everything the interrupted attempt wrote remains in the stream, and the retry emits
+        fresh event ids.</div>
     </div>
 
     <h3 id="replay" class="new">How that is actually achieved</h3>
     <p>Yes — durable functions, in the specific sense Temporal and Azure Durable Functions mean
       it. The mechanism is <b>event-sourced deterministic replay</b>, and the thing that makes it
       click is realizing that nothing is ever "frozen and thawed." No stack is serialized, no
-      continuation is captured, no process is held open. There is only an append-only log and a
-      function that can be re-run against it.</p>
+      continuation is captured, no process is held open. A function is re-run against its
+      append-only workflow journal.</p>
 
-    <p>The journal is that log. In the Workflow SDK's <code>World</code> interface, storage has
+    <p><b>There are two logs, and they are not interchangeable.</b> The workflow journal
+      (<code>Storage.events</code>) is what deterministic replay reads. The session stream
+      (<code>Streamer.streams</code>) is what clients follow and what channel handlers react
+      to. The journal deduplicates completed work by construction; the session stream does
+      not. That is why replaying a completed step emits nothing, while retrying an interrupted
+      step can append duplicate semantic events with new ids.</p>
+
+    <p>In the Workflow SDK's <code>World</code> interface, journal storage has
       exactly one write path — <code>events.create()</code> — and the runs, steps, and hooks you
       can query are materialized views over it, not independently mutable records. The
       vocabulary is small:</p>
@@ -971,8 +991,9 @@ wait_created  wait_completed                attr_set</pre>
           <code>specVersion</code> the runtime gates on, plus capability flags so the core enables
           optimizations only where supported. eve ships <code>@workflow/world-local</code>
           (on-disk, dev and self-host) and <code>@workflow/world-vercel</code>; its docs name
-          <code>@workflow/world-postgres</code> as an alternative, though that one isn't pinned in
-          this repo's dependency tree.</p>
+          <code>@workflow/world-postgres</code> as an alternative. Selecting it goes through
+          <code>experimental.workflow.world</code>, which eve explicitly marks unstable, and
+          the world must match the runtime's vendored <code>5.0.0-beta</code> protocol line.</p>
         <p>Concurrent writers are handled by optimistic concurrency: writes carry a precondition
           on the log's state, so a stale replay racing a live one is rejected with a 412 rather
           than corrupting the journal.</p>
@@ -984,25 +1005,33 @@ wait_created  wait_completed                attr_set</pre>
       authored state intact. Identity-based channels like a Telegram private chat adopt agent
       updates without needing a new session.</p>
 
-    <h2 id="runtimes">Two runtimes, one trust boundary</h2>
-    <p>An eve agent spans two execution environments, and the split is a security boundary
-      rather than a performance one.</p>
+    <h2 id="runtimes">Two runtimes; isolation depends on the backend</h2>
+    <p>An eve agent conceptually spans a trusted app runtime and a model-controlled shell.
+      Whether that split is a strong security boundary depends on which sandbox backend is
+      active. Do not infer production isolation from the word “sandbox” alone.</p>
 
     <table class="grid">
       <tr><th>&nbsp;</th><th>App runtime</th><th>Sandbox</th></tr>
-      <tr><td class="k">secrets / env</td><td>yes</td><td>none</td></tr>
-      <tr><td class="k">Node.js code</td><td>yes</td><td>no</td></tr>
-      <tr><td class="k">network</td><td>unrestricted</td><td>policy-controlled</td></tr>
-      <tr><td class="k">filesystem</td><td>the app's own</td><td>isolated <code>/workspace</code></td></tr>
+      <tr><td class="k">secrets / env</td><td>yes</td><td>not intentionally exposed</td></tr>
+      <tr><td class="k">Node.js code</td><td>yes</td><td>backend-dependent shell</td></tr>
+      <tr><td class="k">network</td><td>unrestricted</td><td>backend-dependent policy</td></tr>
+      <tr><td class="k">filesystem</td><td>the app's own</td><td>isolated except under <code>just-bash</code></td></tr>
       <tr><td class="k">runs</td><td>agent loop, model calls, tool executors, hooks, connections</td><td>the model's shell and processes</td></tr>
     </table>
 
     <p>Provider keys, tool secrets, and MCP/OpenAPI/connection credentials stay in the app
       runtime and are resolved per step — never serialized into durable state, never placed in
-      conversation history. When sandboxed code needs authenticated network access (cloning a
-      private repo, say), <b>credential brokering</b> injects the auth header at the sandbox's
-      network firewall for matching domains. The secret never enters the sandbox process; only
-      the response does.</p>
+      conversation history. On Vercel Sandbox, <b>credential brokering</b> can inject an auth
+      header at the network firewall for matching domains, so the secret never enters the
+      sandbox process. Do not assume every backend provides that capability.</p>
+
+    <table class="grid">
+      <tr><th>backend</th><th>isolation</th><th>network controls</th><th>credential brokering</th></tr>
+      <tr><td class="k">Vercel Sandbox</td><td>isolated microVM</td><td>allow, deny, allow-list</td><td>yes</td></tr>
+      <tr><td class="k">Docker</td><td>container</td><td><code>allow-all</code> / <code>deny-all</code></td><td>no</td></tr>
+      <tr><td class="k">microsandbox</td><td>local VM</td><td>policy-controlled, including allow-list</td><td>no</td></tr>
+      <tr><td class="k">just-bash</td><td><b>none</b>; in-process simulation</td><td><b>none</b></td><td>no</td></tr>
+    </table>
 
     <p>The two have decoupled lifetimes. A parked workflow holds no sandbox compute, and the
       sandbox is keyed per durable session rather than per deployment — a redeploy does not
@@ -1045,14 +1074,16 @@ wait_created  wait_completed                attr_set</pre>
       Silicon or Linux with KVM), and finally <code>just-bash</code> — a pure-JS simulated shell
       with a virtual filesystem and <b>no real binaries at all</b>. That last fallback is worth
       knowing about, because an agent that works in production and mysteriously can't find
-      <code>git</code> locally has usually landed on it.</p>
+      <code>git</code> locally has usually landed on it. More importantly,
+      <code>just-bash</code> is not an isolation boundary: it runs in the app process, stores
+      its virtual filesystem under <code>.eve/sandbox-cache/</code>, and has no network
+      isolation. Never use it for untrusted input on the assumption that it contains damage.</p>
 
-    <p>The sandbox exists to give the model a place to be wrong safely. It holds no
-      <code>process.env</code>, no secrets, and no route back into the app runtime, so a
-      destructive command or a prompt-injected instruction damages a disposable
-      <code>/workspace</code> and nothing else. Egress defaults to <code>allow-all</code>, which
-      is the setting to change first for anything sensitive — <code>"deny-all"</code> or an
-      explicit allow-list, set on the backend factory or in <code>onSession</code>.</p>
+    <p>On an isolating backend, the sandbox gives the model a place to be wrong safely: it has
+      no app <code>process.env</code>, and destructive commands are contained within its
+      workspace. Egress still defaults to <code>allow-all</code>. Use <code>"deny-all"</code>
+      or an explicit allow-list where the chosen backend supports one; Docker supports only
+      allow-all or deny-all, and <code>just-bash</code> rejects network-policy configuration.</p>
 
     <h2 id="author">What you author</h2>
     <p>Six surfaces, each a directory under <code>agent/</code>. The distinction that matters
@@ -1130,11 +1161,14 @@ export default defineAgent({
     <p>Before you author anything, every agent already has a tool set:
       <code>bash</code>, <code>read_file</code>, <code>write_file</code>, <code>glob</code>,
       <code>grep</code>, <code>web_fetch</code>, <code>web_search</code>, <code>todo</code>,
-      and <code>ask_question</code>. Three more appear conditionally —
-      <code>agent</code> only in the root session, <code>load_skill</code> only if skills are
-      declared, <code>connection_search</code> only if connections are. Authoring a file at a
-      built-in's slug overrides it; exporting <code>disableTool()</code> removes it. A filename
-      that matches no known built-in is a build error rather than a silent no-op.</p>
+      and <code>ask_question</code>. Five are conditional: <code>agent</code> appears only in
+      the root session, <code>load_skill</code> only when skills are declared,
+      <code>connection_search</code> only when connections exist, <code>ask_question</code>
+      only for sessions that support interactive input, and <code>web_search</code> only for a
+      supporting model provider. Authoring a file at a built-in's slug overrides it; exporting
+      <code>disableTool()</code> removes it. The build-time unknown-name error applies to the
+      sentinel passed to <code>disableTool()</code>; an ordinary new filename, such as
+      <code>get_weather.ts</code>, declares a new tool.</p>
 
     <p>Compaction is part of the harness too. When the conversation plus its checkpoint
       envelope crosses <code>compaction.thresholdPercent</code> (default <code>0.9</code>),
@@ -1164,13 +1198,15 @@ export default defineAgent({
     <p>A subagent boundary is a <em>context</em> boundary, not a permission boundary. A
       sensitive tool still needs its own <code>approval</code> policy on the other side of it.</p>
 
-    <h2 id="stream">One stream for everything</h2>
+    <h2 id="stream">One observable stream, plus the workflow journal</h2>
     <p>Every observable thing a run does lands on a single newline-delimited JSON log:
       <code>turn.started</code> → <code>step.started</code> → <code>actions.requested</code> →
       <code>action.result</code> → <code>message.appended</code>… →
-      <code>turn.completed</code> → <code>session.waiting</code>. That log is the source of
-      truth. <em>How</em> different pieces of the system see it is not the same for everyone —
-      and that distinction is the part people usually get wrong.</p>
+      <code>turn.completed</code> → <code>session.waiting</code>. This session stream is the
+      source of truth for observable agent activity. It is separate from the lower-level
+      workflow journal that records runs, steps, hooks, and waits for deterministic replay.
+      <em>How</em> different pieces of the system see the session stream is not the same for
+      everyone — and that distinction is the part people usually get wrong.</p>
 
     <h3 id="emit" class="new">Emit is a trigger, not a message queue</h3>
     <p>When the harness reaches a lifecycle moment, it calls <b>emit</b>. Emit does two jobs
@@ -1404,8 +1440,11 @@ curl -X POST localhost:2000<span class="hl">/eve/v1/dev/schedules/:id</span></pr
 <pre>eve build                      <span class="cm"># → .output/ (Nitro)</span>
 PORT=3000 eve start --host 0.0.0.0
 
-<span class="cm"># state lives here. MOUNT IT ON PERSISTENT STORAGE.</span>
+<span class="cm"># local-world state lives here. Persistent disk is required.</span>
 <span class="hl">.eve/.workflow-data</span>
+
+<span class="cm"># local world is SINGLE-NODE. Do not add replicas.</span>
+<span class="cm"># Horizontal scale needs a shared world implementation.</span>
 
 <span class="cm"># your proxy must forward BOTH of these, unrewritten:</span>
 /eve/
@@ -1416,8 +1455,8 @@ PORT=3000 eve start --host 0.0.0.0
 eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span>
 
 <span class="cm"># VERCEL env set → eve build writes .vercel/output</span>
-<span class="cm"># string model ids route through AI Gateway on project</span>
-<span class="cm"># OIDC, so no separate provider key is needed.</span>
+<span class="cm"># String model ids can route through AI Gateway on project OIDC.</span>
+<span class="cm"># This repo passes openai(...) directly, so OPENAI_API_KEY is needed.</span>
 
 <span class="cm"># services wired for you:</span>
 <span class="cm">#   web runtime  → session/stream/channel/callback routes</span>
@@ -1426,12 +1465,14 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
 <span class="cm">#   Sandbox      → defaultBackend() picks it automatically</span></pre>
     </div>
 
-    <p>The two hosts differ in exactly three places: where the build output goes
-      (<code>.vercel/output</code> vs <code>.output/</code>), which Workflow world backs
-      durable state (Vercel Workflow vs the SDK's local on-disk world, or a package like
-      <code>@workflow/world-postgres</code> selected through
-      <code>experimental.workflow.world</code>), and which sandbox backend
-      <code>defaultBackend()</code> resolves to. Everything above those adapters is identical.</p>
+    <p>The hosts share the same application model, but differ along several adapter seams and
+      in their operational envelope: build output, workflow world, sandbox backend, schedule
+      runner, authentication, credentials, and scaling model. In particular, the default
+      local world is an on-disk <b>single-node</b> store. A load-balanced deployment needs a
+      genuinely shared world implementation, not a shared filesystem volume. Eve documents
+      <code>@workflow/world-postgres</code> as one option, but the selector
+      <code>experimental.workflow.world</code> is explicitly unstable and must match the
+      vendored <code>5.0.0-beta</code> protocol.</p>
 
     <h2 id="gotchas">Gotchas worth knowing</h2>
     <ul class="gotchas">
@@ -1444,8 +1485,10 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
         emit path after the event is appended to the durable log. Do not model Slack delivery
         as "subscribe to the stream and post" — model it as "emit invokes
         <code>events[&quot;message.completed&quot;]</code>, which posts." Retries re-emit under
-        <em>new</em> <code>meta.id</code>s, so those handlers can run again; make outbound
-        posts idempotent.</li>
+        <em>new</em> <code>meta.id</code>s, so those handlers can run again. The built-in Slack
+        delivery does not dedupe; if duplicates are unacceptable, replace
+        <code>message.completed</code> and store seen
+        <code>(turnId, stepIndex, sequence)</code> tuples durably.</li>
       <li><b>WebSockets are not the workflow↔channel bus.</b> Optional custom-channel edge
         only. Default clients use HTTP NDJSON; Slack-class platforms use webhooks + REST.</li>
       <li><b><code>meta.id</code> dedupes reconnects, not retries.</b> A retried step re-emits
@@ -1473,16 +1516,23 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
       <li><b>A self-host proxy must forward <code>/.well-known/workflow/</code> too.</b>
         Forward only <code>/eve/</code> and a session will start and then stall — the workflow
         callbacks have no way back in.</li>
+      <li><b>The default self-hosted world is single-node.</b> Persisting
+        <code>.eve/.workflow-data</code> survives restarts, but it does not make independent
+        replicas coordinate. Horizontal scaling requires a shared world implementation;
+        <code>experimental.workflow.world</code> is currently an unstable API.</li>
+      <li><b><code>just-bash</code> is not a security sandbox.</b> It is the automatic fallback
+        when Docker and microsandbox are unavailable, runs in process, and provides no network
+        isolation. Treat it as a development compatibility layer only.</li>
       <li><b>Tool output crosses a JSON boundary.</b> No <code>Date</code>, <code>Map</code>,
         <code>Set</code>, <code>NaN</code>, or cycles. Images must be base64, and compaction
         replaces file payloads with a text stub — an image is unrecoverable afterwards.</li>
       <li><b><code>{ auth: null }</code> is allow, not deny.</b> The gate is the shape of the
         return: bare <code>null</code> drops the message; an object with an <code>auth</code>
         field dispatches. A null principal only means anonymous — the agent still runs.</li>
-      <li><b>Overriding <code>events["message.completed"]</code> replaces delivery.</b> Spread
-        <code>defaultEvents</code> and call through, or you will log the answer and never post
-        it to Slack. Channel <code>events</code> are not the same as
-        <code>agent/hooks/</code>.</li>
+      <li><b>Overriding <code>events["message.completed"]</code> replaces delivery.</b> In eve
+        0.31.3 the default map is not publicly exported, so your override must reimplement the
+        final <code>channel.thread.post()</code> itself. Channel <code>events</code> are not the
+        same as <code>agent/hooks/</code>.</li>
     </ul>
 
     <h2 id="faq">FAQ</h2>
@@ -1516,10 +1566,10 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
         <code>defaultSlackAuth</code> when you do.</dd>
 
       <dt>Where do “Thinking…” and “Working…” come from?</dt>
-      <dd>Default channel <code>events</code> (exported as <code>defaultEvents</code>) map
-        stream events to Slack typing/posts. They run in-process when the runtime emits those
-        events; they are not Slack-side listeners. Wrap them when you need logging or custom
-        UX.</dd>
+      <dd>The Slack channel's internal default event map turns session-stream events into
+        typing updates and posts. These handlers run in process when eve emits an event; they
+        are not Slack-side listeners. In eve 0.31.3 the map is not publicly exported, so an
+        override replaces the default rather than wrapping it.</dd>
 
       <dt>What happens if I redeploy while a turn is running?</dt>
       <dd>The run resumes from the last completed step. Completed steps replay their recorded
@@ -1534,14 +1584,17 @@ eve deploy    <span class="cm"># install + vercel deploy --prod + pull env</span
       <dt>Where does state live when I'm not on Vercel?</dt>
       <dd>The Workflow SDK's local world persists runs to disk under
         <code>.eve/.workflow-data</code> and dispatches through the same Nitro-hosted workflow
-        routes. Self-hosted deployments can swap in another world package —
-        <code>@workflow/world-postgres</code>, for instance — via
-        <code>experimental.workflow.world</code> in <code>agent.ts</code>.</dd>
+        routes. It is a single-node store. Self-hosted deployments can opt into another world
+        package such as <code>@workflow/world-postgres</code> via
+        <code>experimental.workflow.world</code>, but that API is unstable and the package
+        must match eve's <code>5.0.0-beta</code> workflow protocol.</dd>
 
       <dt>Can the model reach my API keys?</dt>
-      <dd>No. Secrets live in the app runtime; the sandbox has no <code>process.env</code>, no
-        Node.js, and no path back. When sandboxed code needs authenticated network access, the
-        credential is injected at the firewall rather than handed to the process.</dd>
+      <dd>On an isolating backend, app secrets are not placed in the sandbox environment or
+        durable history. Vercel Sandbox can broker credentials at its firewall without handing
+        them to the process. Backend guarantees differ, however: Docker and microsandbox have
+        different policy features, and <code>just-bash</code> has no process or network
+        isolation at all.</dd>
 
       <dt>Is emit like SQS / RabbitMQ for channel delivery?</dt>
       <dd>No. Emit appends to an append-only log, then <code>await</code>s channel handlers and
