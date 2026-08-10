@@ -5,6 +5,7 @@ node_modules
 .next
 .output
 .nitro
+.idea
 dist
 .DS_Store
 *.tsbuildinfo
