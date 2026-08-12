@@ -53,6 +53,14 @@ export function parseReview(message: string): Review {
   return review;
 }
 
+export function tryParseReview(message: string): Review | null {
+  try {
+    return parseReview(message);
+  } catch {
+    return null;
+  }
+}
+
 export function formatReviewBody(review: Review): string {
   const criteria = criterionLabels
     .map(([key, label]) => {
@@ -92,7 +100,7 @@ export function formatReviewComments(review: Review) {
 
 type AuthAttributes = Readonly<Record<string, string | readonly string[]>>;
 
-// Marks the turn so reviewer instructions load and delivery posts a Review.
+// Marks an opened-PR turn so reviewer instructions are required, not optional.
 export function reviewAuth<T extends { attributes: AuthAttributes }>(auth: T): T {
   return {
     ...auth,
@@ -101,7 +109,18 @@ export function reviewAuth<T extends { attributes: AuthAttributes }>(auth: T): T
 }
 
 export function isReview(auth: { attributes: AuthAttributes } | null | undefined): boolean {
-  if (!auth) return false;
-  const value = auth.attributes.review;
-  return (typeof value === "string" ? value : value?.[0]) === "1";
+  return authAttribute(auth?.attributes, "review") === "1";
+}
+
+export function isGitHubPrConversation(
+  auth: { authenticator: string; attributes: AuthAttributes } | null | undefined,
+): boolean {
+  if (auth?.authenticator !== "github-webhook") return false;
+  const kind = authAttribute(auth.attributes, "conversation_kind");
+  return kind === "pull_request" || kind === "review_thread";
+}
+
+function authAttribute(attributes: AuthAttributes | undefined, key: string): string | undefined {
+  const value = attributes?.[key];
+  return typeof value === "string" ? value : value?.[0];
 }

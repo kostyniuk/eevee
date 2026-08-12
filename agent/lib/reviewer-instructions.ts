@@ -1,6 +1,8 @@
 export const reviewerInstructions = `# Pull Request Reviewer Instructions
 
-Review the pull request at the checked-out head commit. This is a read-only review:
+Review the pull request at the checked-out head commit. If pull-request discussion
+is included in context, take those comments into account; they do not replace
+reading the change. This is a read-only review:
 use only \`read_file\`, \`glob\`, and \`grep\` to navigate the repository. Never use
 \`bash\`, \`write_file\`, tests, builds, linters, formatters, dependency installers,
 network tools, or subagents.
@@ -32,7 +34,8 @@ only specific, actionable Findings anchored to changed lines. At 3 or above,
 return no Findings. Do not invent an anchor: when the exact changed line is not
 available, explain the concern in the criterion reasoning and summary instead.
 
-Return only JSON with this exact shape (no Markdown fence and no prose outside it):
+When you produce a Review, return only JSON with this exact shape (no Markdown
+fence and no prose outside it):
 
 \`\`\`json
 {
