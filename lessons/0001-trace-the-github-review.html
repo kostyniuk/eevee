@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 · Trace the GitHub review</title>
+<style>
+  :root {
+    --ivory:   #FAF9F5;
+    --slate:   #141413;
+    --clay:    #D97757;
+    --oat:     #E3DACC;
+    --olive:   #788C5D;
+    --gray-150:#F0EEE6;
+    --gray-300:#D1CFC5;
+    --gray-500:#87867F;
+    --gray-700:#3D3D3A;
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--ivory);
+    color: var(--gray-700);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: 56px 24px 120px;
+  }
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 48px;
+  }
+  @media (max-width: 920px) { .page { grid-template-columns: 1fr; } nav { display: none; } }
+  nav { position: sticky; top: 32px; align-self: start; font-size: 13px; }
+  nav .label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray-500); margin-bottom: 12px; }
+  nav a { display: block; padding: 5px 0 5px 12px; border-left: 2px solid var(--gray-300); color: var(--gray-700); text-decoration: none; }
+  nav a:hover { color: var(--slate); border-color: var(--slate); }
+  nav a.l2 { padding-left: 24px; font-size: 12.5px; color: var(--gray-500); }
+  nav .files { margin-top: 28px; border-top: 1px solid var(--gray-300); padding-top: 16px; }
+  nav .files code { display: block; font-family: var(--mono); font-size: 11px; color: var(--gray-500); padding: 3px 0; }
+  header { margin-bottom: 12px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray-500); margin-bottom: 10px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: 32px; color: var(--slate); letter-spacing: -0.01em; margin-bottom: 14px; }
+  .tldr { border: 1.5px solid var(--gray-300); border-left: 3px solid var(--clay); border-radius: 10px; background: #fff; padding: 16px 18px; margin-bottom: 8px; }
+  .tldr b { color: var(--slate); }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: 22px; color: var(--slate); margin: 40px 0 14px; scroll-margin-top: 24px; }
+  h3 { font-family: var(--serif); font-weight: 500; font-size: 17px; color: var(--slate); margin: 22px 0 8px; }
+  p { margin-bottom: 12px; max-width: 680px; }
+  a { color: var(--slate); text-decoration-color: var(--clay); text-underline-offset: 3px; }
+  code { font-family: var(--mono); font-size: 13px; }
+  details { border: 1.5px solid var(--gray-300); border-radius: 10px; background: #fff; margin: 14px 0; overflow: hidden; }
+  summary { list-style: none; cursor: pointer; padding: 14px 16px; font-family: var(--serif); font-size: 16px; color: var(--slate); display: flex; align-items: baseline; gap: 10px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▸"; color: var(--clay); font-family: var(--sans); font-size: 12px; transition: transform 120ms; }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary .where { font-family: var(--mono); font-size: 11px; color: var(--gray-500); margin-left: auto; }
+  details .body { padding: 0 16px 16px; }
+  details .body p { font-size: 14px; }
+  .tabs { border: 1.5px solid var(--gray-300); border-radius: 10px; background: #fff; margin: 16px 0 8px; overflow: hidden; }
+  .tabbar { display: flex; border-bottom: 1px solid var(--gray-300); background: var(--gray-150); }
+  .tabbar button { appearance: none; border: none; background: none; font-family: var(--mono); font-size: 12px; color: var(--gray-500); padding: 10px 16px; cursor: pointer; border-right: 1px solid var(--gray-300); }
+  .tabbar button.on { background: #fff; color: var(--slate); border-bottom: 2px solid var(--clay); margin-bottom: -1px; }
+  .tabs pre { display: none; margin: 0; padding: 16px 18px; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: var(--slate); overflow-x: auto; }
+  .tabs pre.on { display: block; }
+  .hl { color: var(--clay); }
+  .cm { color: var(--gray-500); }
+  .callout { display: flex; gap: 12px; border: 1.5px solid var(--oat); background: rgba(227,218,204,0.35); border-radius: 10px; padding: 14px 16px; margin: 18px 0; font-size: 14px; }
+  .callout .ico { color: var(--clay); font-weight: 600; }
+  dl.faq { margin-top: 8px; }
+  dl.faq dt { font-family: var(--serif); font-size: 16px; color: var(--slate); margin-top: 18px; }
+  dl.faq dd { font-size: 14px; margin: 4px 0 0; max-width: 640px; }
+  ul.gotchas { padding-left: 20px; max-width: 680px; }
+  ul.gotchas li { margin-bottom: 8px; }
+  table.grid { width: 100%; max-width: 680px; border-collapse: collapse; background: #fff; border: 1.5px solid var(--gray-300); border-radius: 10px; overflow: hidden; font-size: 14px; margin: 16px 0; }
+  table.grid th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-500); font-weight: normal; background: var(--gray-150); padding: 9px 14px; border-bottom: 1px solid var(--gray-300); }
+  table.grid td { padding: 10px 14px; border-bottom: 1px solid var(--gray-300); vertical-align: top; }
+  table.grid tr:last-child td { border-bottom: none; }
+  pre.plain { background: #fff; border: 1.5px solid var(--gray-300); border-radius: 10px; padding: 16px 18px; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: var(--slate); overflow-x: auto; margin: 16px 0; max-width: 680px; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 680px; margin: 18px 0; }
+  .flow span { background: #fff; border: 1.5px solid var(--gray-300); border-radius: 8px; padding: 8px 10px; color: var(--slate); font-family: var(--mono); font-size: 11px; }
+  .flow i { color: var(--clay); font-style: normal; }
+  .quiz { max-width: 680px; }
+  .question { background: #fff; border: 1.5px solid var(--gray-300); border-radius: 10px; padding: 16px; margin: 14px 0; }
+  .question p { color: var(--slate); font-family: var(--serif); font-size: 16px; }
+  .answers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .answers button { appearance: none; background: #fff; border: 1px solid var(--gray-300); border-radius: 7px; color: var(--gray-700); cursor: pointer; font-family: var(--mono); font-size: 11px; padding: 9px; }
+  .answers button:hover { border-color: var(--slate); }
+  .feedback { color: var(--gray-500); font-size: 13px; min-height: 22px; margin: 10px 0 0; }
+  .feedback.ok { color: var(--olive); }
+  @media (max-width: 620px) { .answers { grid-template-columns: 1fr; } .tabbar { overflow-x: auto; } }
+  @media print { body { padding: 24px; } .page { display: block; } nav { display: none; } details { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <div class="label">Lesson 1</div>
+    <a href="#model">The mental model</a>
+    <a href="#trace">Trace one event</a>
+    <a href="#contracts">Three contracts</a>
+    <a href="#evidence">Evidence at the edge</a>
+    <a href="#deploy">Deploy without Git</a>
+    <a href="#practice">Retrieval practice</a>
+    <a href="#faq">FAQ</a>
+    <div class="files">
+      <div class="label">Files read</div>
+      <code>agent/channels/github.ts</code>
+      <code>agent/lib/review.ts</code>
+      <code>agent/instructions/reviewer.md</code>
+      <code>evals/github/harness.ts</code>
+      <code>evals/github/opened.eval.ts</code>
+    </div>
+  </nav>
+
+  <main>
+    <header>
+      <div class="eyebrow">eevee course · implementation phase 1</div>
+      <h1>Trace one pull request into one advisory review</h1>
+      <div class="tldr" id="tldr">
+        <b>TL;DR</b> — The GitHub App decides <em>where</em> eevee may act; <code>onPullRequest()</code> decides <em>when</em> it acts; the reviewer prompt and Zod schema decide <em>what shape</em> the model may return; and the Reviews API decides <em>how</em> that result appears in GitHub. The edge eval proves the whole chain, while <code>vercel deploy --prod</code> ships the current source snapshot independently of commits or pull requests.
+      </div>
+    </header>
+
+    <h2 id="model">The mental model: a chain of contracts</h2>
+    <p>Your tangible win is to predict the outcome of a pull-request event by locating the contract that controls it. Do not think of eevee as one large “AI reviewer.” Think of it as a short chain where every boundary rejects, transforms, or delivers data.</p>
+    <div class="flow" aria-label="Review event flow">
+      <span>installation</span><i>→</i><span>webhook</span><i>→</i><span>gate</span><i>→</i><span>model</span><i>→</i><span>schema</span><i>→</i><span>GitHub review</span>
+    </div>
+    <div class="callout">
+      <span class="ico">01</span>
+      <div><b>Useful debugging rule:</b> find the first boundary whose expected output is missing. Everything after it is downstream noise.</div>
+    </div>
+
+    <h2 id="trace">Trace one event</h2>
+    <p>Open the steps in order. Only the first is expanded so you actively retrieve the rest instead of passively scanning them.</p>
+
+    <details open>
+      <summary>1 · GitHub grants a location <span class="where">GitHub App installation</span></summary>
+      <div class="body">
+        <p>The App is installed on a personal account or organization, then granted either all repositories or selected repositories. That installation—not the code—defines eevee's repository reach. GitHub documents both scopes in its <a href="https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party">installation guide</a>.</p>
+      </div>
+    </details>
+    <details>
+      <summary>2 · eve authenticates ingress <span class="where">github.ts:9–24</span></summary>
+      <div class="body">
+        <p><code>connectGitHubCredentials("github/eevee")</code> supplies the installation credential and webhook secret. eve owns the <code>/eve/v1/github</code> route and signature verification; our handler opts into pull-request events. The local eval swaps in deterministic credentials, but production uses the managed connector. See the <a href="https://eve.dev/integrations/github">eve GitHub integration</a>.</p>
+      </div>
+    </details>
+    <details>
+      <summary>3 · The gate admits one event <span class="where">github.ts:23–31</span></summary>
+      <div class="body">
+        <p><code>onPullRequest()</code> returns work only when the action is <code>opened</code> and the pull request is not a draft. Returning <code>null</code> ends the chain before a model call. This is the cheapest and clearest place to express event policy.</p>
+      </div>
+    </details>
+    <details>
+      <summary>4 · The model crosses a typed boundary <span class="where">reviewer.md + review.ts</span></summary>
+      <div class="body">
+        <p>The reviewer instructions constrain behavior and request exact JSON. <code>reviewSchema.parse()</code> then treats that output as untrusted input. A rating of 3 or more removes inline findings even if the model supplied them, so application code—not prompt compliance—enforces the safety threshold.</p>
+      </div>
+    </details>
+    <details>
+      <summary>5 · GitHub receives a formal review <span class="where">github.ts:43–55</span></summary>
+      <div class="body">
+        <p>The completed message becomes <code>POST /pulls/{number}/reviews</code>. The payload uses <code>event: "COMMENT"</code>, an advisory summary, the reviewed commit SHA, and any permitted inline comments. GitHub's <a href="https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request">review endpoint</a> distinguishes <code>COMMENT</code> from <code>APPROVE</code> and <code>REQUEST_CHANGES</code>.</p>
+      </div>
+    </details>
+
+    <h2 id="contracts">Three contracts you will change later</h2>
+    <p>These look adjacent in the feature, but they answer different questions. Select each tab and name the failure it prevents.</p>
+    <div class="tabs" data-tabs>
+      <div class="tabbar">
+        <button class="on" data-t="0">admission</button>
+        <button data-t="1">meaning</button>
+        <button data-t="2">delivery</button>
+      </div>
+<pre class="on"><span class="cm">// Which events become work?</span>
+if (pullRequest.action !== "opened" || pullRequest.raw.draft) return null;
+<span class="hl">return { auth: defaultGitHubAuth(ctx), context: [...] };</span></pre>
+<pre><span class="cm">// What counts as a valid review?</span>
+const review = <span class="hl">reviewSchema.parse(JSON.parse(json))</span>;
+if (review.safetyRating >= 3) return { ...review, findings: [] };</pre>
+<pre><span class="cm">// How does GitHub present the result?</span>
+await channel.github.request({
+  method: "POST",
+  path: `/repos/.../pulls/${number}/reviews`,
+  body: { <span class="hl">event: "COMMENT"</span>, body, comments }
+});</pre>
+    </div>
+
+    <h2 id="evidence">Prove behavior at the edge</h2>
+    <p>The eval does not call a helper and assume the route works. It signs a synthetic GitHub webhook, sends it to <code>/eve/v1/github</code>, and captures the outbound REST request. That covers both edges of our system.</p>
+    <table class="grid">
+      <thead><tr><th>Input</th><th>Expected edge output</th><th>Boundary proved</th></tr></thead>
+      <tbody>
+        <tr><td>Safe, opened PR</td><td>One <code>COMMENT</code> review; no inline findings</td><td>Full chain + high-rating rule</td></tr>
+        <tr><td>Risky, opened PR</td><td>One <code>COMMENT</code> review; anchored finding</td><td>Schema + line mapping</td></tr>
+        <tr><td>Draft PR</td><td>No outbound review</td><td>Admission gate</td></tr>
+      </tbody>
+    </table>
+    <p>The harness checks authorization, endpoint, body, and comments in <a href="../evals/github/harness.ts">the actual eval code</a>. Deterministic model fixtures keep this a contract test rather than a test of model mood.</p>
+
+    <h2 id="deploy">Why production did not need a merge request</h2>
+    <p>Git history and deployment input are separate mechanisms. A Git-integrated deployment starts from a pushed commit. A Vercel CLI source deployment starts from the files in the local project directory.</p>
+    <pre class="plain"><span class="cm"># upload the current local project and assign the production domain</span>
+vercel deploy --prod --yes</pre>
+    <p>Vercel explicitly documents that CLI production deployment works whether the project is connected to Git or not. The tradeoff is traceability: production can contain a source snapshot that no commit names. A safer staged variant is <code>vercel --prod --skip-domain</code>, followed by an explicit promotion after inspection. See Vercel's <a href="https://vercel.com/docs/cli/deploying-from-cli">CLI deployment guide</a>.</p>
+    <div class="callout">
+      <span class="ico">02</span>
+      <div><b>In this phase:</b> direct deployment was possible, but your “no commit or merge” instruction still remained intact. Deployment authority and Git authority are distinct.</div>
+    </div>
+
+    <h2 id="practice">Retrieval practice</h2>
+    <p>Answer without reopening the sections above. Immediate feedback checks fluency; the final prompt checks whether you can reconstruct the chain.</p>
+    <div class="quiz">
+      <div class="question" data-q>
+        <p>1. A newly opened draft PR reaches the webhook. What happens next?</p>
+        <div class="answers">
+          <button data-ok="1">Gate drops event</button>
+          <button>Model skips event</button>
+          <button>GitHub rejects event</button>
+        </div>
+        <div class="feedback" aria-live="polite"></div>
+      </div>
+      <div class="question" data-q>
+        <p>2. The parsed review has safety rating 4. What may be delivered?</p>
+        <div class="answers">
+          <button data-ok="1">Summary without findings</button>
+          <button>Inline findings included</button>
+          <button>Review requests changes</button>
+        </div>
+        <div class="feedback" aria-live="polite"></div>
+      </div>
+      <div class="question" data-q>
+        <p>3. Which payload choice makes this review advisory?</p>
+        <div class="answers">
+          <button data-ok="1">COMMENT review event</button>
+          <button>Protected branch setting</button>
+          <button>Missing status check</button>
+        </div>
+        <div class="feedback" aria-live="polite"></div>
+      </div>
+    </div>
+    <h3>Your retrieval ticket</h3>
+    <p>Close this page, then send the agent one sentence completing: <b>“An opened PR becomes a review by…”</b> Name at least four boundaries in order and identify which one prevents drafts. That demonstration will become learning record 0001.</p>
+    <p>Keep the <a href="../reference/0001-github-review-tracer.html">GitHub review tracer</a> nearby for later implementation phases. Ask the agent any follow-up question—especially if two boundaries still feel like the same responsibility.</p>
+
+    <h2 id="gotchas">Gotchas worth knowing</h2>
+    <ul class="gotchas">
+      <li><b>A valid webhook is not an authorized review.</b> Signature verification establishes origin; the installation token and repository grant establish where the App may act.</li>
+      <li><b>A prompt is not a runtime contract.</b> Zod parsing and the rating threshold enforce what must remain true when model output is imperfect.</li>
+      <li><b>A production deployment is not proof of Git history.</b> CLI deployment can ship uncommitted local source, which is useful but less traceable.</li>
+    </ul>
+
+    <h2 id="faq">FAQ</h2>
+    <dl class="faq">
+      <dt>Is the agent connected per repository or per account?</dt>
+      <dd>The GitHub App is installed on an account or organization, with access granted to either all repositories or selected repositories. “Selected repositories” gives per-repo availability without creating a different App.</dd>
+      <dt>Why use a formal review instead of an issue comment?</dt>
+      <dd>The Reviews API groups the summary and line-anchored findings into one review tied to a commit. <code>COMMENT</code> preserves that structure without approving or requesting changes.</dd>
+      <dt>What should lesson 2 cover?</dt>
+      <dd>The next implemented phase. We will reuse this boundary model, add only the new concept, and interleave one question from lesson 1.</dd>
+    </dl>
+  </main>
+</div>
+<script>
+document.querySelectorAll("[data-tabs]").forEach(box => {
+  const btns=box.querySelectorAll("button"), panes=box.querySelectorAll("pre");
+  btns.forEach(b=>b.onclick=()=>{btns.forEach(x=>x.classList.remove("on"));panes.forEach(x=>x.classList.remove("on"));b.classList.add("on");panes[+b.dataset.t].classList.add("on")});
+});
+document.querySelectorAll("[data-q]").forEach(q=>q.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  const f=q.querySelector(".feedback"), ok=b.dataset.ok==="1";
+  f.textContent=ok?"Correct — you found the controlling boundary.":"Not yet — locate the earliest boundary that can produce this outcome.";
+  f.classList.toggle("ok",ok);
+}));
+</script>
+</body>
+</html>
