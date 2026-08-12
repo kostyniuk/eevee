@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · GitHub review tracer</title>
+<style>
+  :root {
+    --ivory:   #FAF9F5;
+    --slate:   #141413;
+    --clay:    #D97757;
+    --oat:     #E3DACC;
+    --olive:   #788C5D;
+    --gray-150:#F0EEE6;
+    --gray-300:#D1CFC5;
+    --gray-500:#87867F;
+    --gray-700:#3D3D3A;
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ivory); color: var(--gray-700); font-family: var(--sans); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; padding: 56px 24px 120px; }
+  .page { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 48px; }
+  @media (max-width: 920px) { .page { grid-template-columns: 1fr; } nav { display: none; } }
+  nav { position: sticky; top: 32px; align-self: start; font-size: 13px; }
+  nav .label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gray-500); margin-bottom: 12px; }
+  nav a { display: block; padding: 5px 0 5px 12px; border-left: 2px solid var(--gray-300); color: var(--gray-700); text-decoration: none; }
+  nav a:hover { color: var(--slate); border-color: var(--slate); }
+  nav .files { margin-top: 28px; border-top: 1px solid var(--gray-300); padding-top: 16px; }
+  nav .files code { display: block; font-family: var(--mono); font-size: 11px; color: var(--gray-500); padding: 3px 0; }
+  header { margin-bottom: 12px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray-500); margin-bottom: 10px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: 32px; color: var(--slate); letter-spacing: -0.01em; margin-bottom: 14px; }
+  .tldr { border: 1.5px solid var(--gray-300); border-left: 3px solid var(--clay); border-radius: 10px; background: #fff; padding: 16px 18px; margin-bottom: 8px; }
+  .tldr b { color: var(--slate); }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: 22px; color: var(--slate); margin: 40px 0 14px; scroll-margin-top: 24px; }
+  p { margin-bottom: 12px; max-width: 680px; }
+  a { color: var(--slate); text-decoration-color: var(--clay); text-underline-offset: 3px; }
+  code { font-family: var(--mono); font-size: 13px; }
+  table.grid { width: 100%; max-width: 680px; border-collapse: collapse; background: #fff; border: 1.5px solid var(--gray-300); border-radius: 10px; overflow: hidden; font-size: 14px; margin: 16px 0; }
+  table.grid th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gray-500); font-weight: normal; background: var(--gray-150); padding: 9px 14px; border-bottom: 1px solid var(--gray-300); }
+  table.grid td { padding: 10px 14px; border-bottom: 1px solid var(--gray-300); vertical-align: top; }
+  table.grid tr:last-child td { border-bottom: none; }
+  pre.plain { background: #fff; border: 1.5px solid var(--gray-300); border-radius: 10px; padding: 16px 18px; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: var(--slate); overflow-x: auto; margin: 16px 0; max-width: 680px; }
+  .callout { display: flex; gap: 12px; border: 1.5px solid var(--oat); background: rgba(227,218,204,0.35); border-radius: 10px; padding: 14px 16px; margin: 18px 0; font-size: 14px; max-width: 680px; }
+  .callout .ico { color: var(--clay); font-weight: 600; }
+  ul.gotchas { padding-left: 20px; max-width: 680px; }
+  ul.gotchas li { margin-bottom: 8px; }
+  dl.faq { margin-top: 8px; }
+  dl.faq dt { font-family: var(--serif); font-size: 16px; color: var(--slate); margin-top: 18px; }
+  dl.faq dd { font-size: 14px; margin: 4px 0 0; max-width: 640px; }
+  @media print { body { padding: 18px; } .page { display: block; } nav { display: none; } h2 { margin-top: 24px; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <nav>
+    <div class="label">Quick reference</div>
+    <a href="#trace">Trace</a>
+    <a href="#decisions">Decisions</a>
+    <a href="#payload">Payload</a>
+    <a href="#debug">Debug order</a>
+    <a href="#deploy">Deployment</a>
+    <a href="#faq">FAQ</a>
+    <div class="files">
+      <div class="label">Core files</div>
+      <code>agent/channels/github.ts</code>
+      <code>agent/lib/review.ts</code>
+      <code>agent/instructions/reviewer.md</code>
+      <code>evals/github/harness.ts</code>
+    </div>
+  </nav>
+  <main>
+    <header>
+      <div class="eyebrow">eevee · lesson 1 reference</div>
+      <h1>GitHub review tracer</h1>
+      <div class="tldr"><b>TL;DR</b> — Debug from left to right: installation → webhook → gate → model → schema → review API. Each boundary has one owner and one observable output.</div>
+    </header>
+
+    <h2 id="trace">Trace</h2>
+    <table class="grid">
+      <thead><tr><th>Boundary</th><th>Owner</th><th>Observable output</th></tr></thead>
+      <tbody>
+        <tr><td>Installation</td><td>GitHub App settings</td><td>Repository is granted</td></tr>
+        <tr><td>Webhook</td><td>eve GitHub channel</td><td>Verified <code>pull_request</code> event</td></tr>
+        <tr><td>Gate</td><td><code>onPullRequest()</code></td><td>Turn config or <code>null</code></td></tr>
+        <tr><td>Model</td><td>Reviewer instructions</td><td>JSON review candidate</td></tr>
+        <tr><td>Schema</td><td><code>parseReview()</code></td><td>Validated, policy-safe review</td></tr>
+        <tr><td>Delivery</td><td>GitHub Reviews API</td><td>Formal advisory review</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="decisions">Decision table</h2>
+    <table class="grid">
+      <thead><tr><th>Condition</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Action is not <code>opened</code></td><td>Return <code>null</code>; no model turn</td></tr>
+        <tr><td>PR is a draft</td><td>Return <code>null</code>; no model turn</td></tr>
+        <tr><td>Safety rating ≥ 3</td><td>Summary review; force <code>comments: []</code></td></tr>
+        <tr><td>Safety rating &lt; 3</td><td>Summary plus valid changed-line findings</td></tr>
+        <tr><td>Conversation is not a PR</td><td>Post the normal message to its thread</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="payload">Formal review payload</h2>
+    <pre class="plain">POST /repos/{owner}/{repo}/pulls/{number}/reviews
+{
+  "event": "COMMENT",
+  "body": "## Safety Rating: …",
+  "commit_id": "{headSha}",
+  "comments": [
+    { "path": "src/x.ts", "line": 42, "side": "RIGHT", "body": "…" }
+  ]
+}</pre>
+    <p><code>COMMENT</code> is advisory. Inline locations use <code>RIGHT</code> for new/context lines and <code>LEFT</code> for deleted lines. Source: <a href="https://docs.github.com/en/rest/pulls/reviews#create-a-review-for-a-pull-request">GitHub Reviews API</a>.</p>
+
+    <h2 id="debug">Debug in this order</h2>
+    <ol class="gotchas">
+      <li><b>Reach:</b> is the App installed for this repository?</li>
+      <li><b>Ingress:</b> did GitHub send a signed <code>pull_request</code> webhook?</li>
+      <li><b>Admission:</b> was it exactly <code>opened</code> and non-draft?</li>
+      <li><b>Generation:</b> did the turn complete with a message?</li>
+      <li><b>Validation:</b> does the message parse against <code>reviewSchema</code>?</li>
+      <li><b>Delivery:</b> did GitHub accept the review endpoint and anchors?</li>
+    </ol>
+    <div class="callout"><span class="ico">Rule</span><div>Stop at the first missing output. Inspecting a downstream boundary before its input exists produces misleading symptoms.</div></div>
+
+    <h2 id="deploy">Deployment ≠ Git history</h2>
+    <table class="grid">
+      <thead><tr><th>Mechanism</th><th>Input</th><th>Needs commit?</th></tr></thead>
+      <tbody>
+        <tr><td>Git integration</td><td>Pushed Git reference</td><td>Yes</td></tr>
+        <tr><td><code>vercel --prod</code></td><td>Current local project</td><td>No</td></tr>
+        <tr><td><code>vercel --prod --skip-domain</code></td><td>Current local project, staged</td><td>No</td></tr>
+      </tbody>
+    </table>
+    <p>Source: <a href="https://vercel.com/docs/cli/deploying-from-cli">Vercel CLI deployment guide</a>.</p>
+
+    <h2 id="faq">Return to the lesson</h2>
+    <dl class="faq">
+      <dt>Need the reasoning rather than the lookup?</dt>
+      <dd>Return to <a href="../lessons/0001-trace-the-github-review.html">Lesson 1: Trace the GitHub review</a>, complete its quiz, then send the retrieval sentence to the agent.</dd>
+    </dl>
+  </main>
+</div>
+</body>
+</html>
