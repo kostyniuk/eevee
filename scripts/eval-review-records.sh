@@ -50,4 +50,4 @@ cp -R "$app_root/fixtures/review-records/evals" "$fixture_root/evals"
 
 cd "$fixture_root"
 DATABASE_DIRECT_URL="$database_url" DATABASE_URL="$database_url" \
-  "$app_root/node_modules/.bin/eve" eval review-records --max-concurrency 1
+  "$app_root/node_modules/.bin/eve" eval --max-concurrency 1
