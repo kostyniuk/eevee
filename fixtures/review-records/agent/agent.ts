@@ -5,7 +5,9 @@ import { reviewModelId } from "#lib/review-config";
 
 const safeReview = {
   safetyRating: 4,
-  verdict: "The focused change is low risk and ready for human review.",
+  summary:
+    "Updates a narrowly scoped helper used by a single call path, with no public API or data-model changes.",
+  verdict: "Low residual risk; ready for human review.",
   criteria: {
     security: { rating: 5, reasoning: "No security boundary changes." },
     blastRadius: { rating: 4, reasoning: "The change is narrowly scoped." },
@@ -19,7 +21,9 @@ const safeReview = {
 
 const riskyReview = {
   safetyRating: 2,
-  verdict: "The change needs a targeted fix before merging.",
+  summary:
+    "Changes the example helper edge-case path that shared callers rely on for empty input handling.",
+  verdict: "Targeted correctness fix needed before merging.",
   criteria: {
     security: { rating: 4, reasoning: "No security regression found." },
     blastRadius: { rating: 2, reasoning: "The changed path is shared." },

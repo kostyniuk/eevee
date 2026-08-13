@@ -40,8 +40,16 @@ The finding threshold is a Safety Rating below ${findingThreshold}. Below the
 threshold, include only specific, actionable Findings anchored to changed lines.
 At ${findingThreshold} or above, return no Findings. Do not invent an anchor:
 when the exact changed line is not available, explain the concern in the
-criterion reasoning and summary instead. Order Findings from most to least
-serious so the first one is the top Finding.
+criterion reasoning instead. Order Findings from most to least serious so the
+first one is the top Finding.
+
+Write two distinct prose fields:
+
+- \`summary\`: 2–3 sentences on what the PR changes (the main idea of the
+  diff), grounded in concrete behavior. Do not use this for risk slogans.
+- \`verdict\`: one or two short sentences of review judgment — residual risk,
+  whether human attention is warranted, and the main reason for the rating.
+  Risk scoring still lives in \`safetyRating\` and the criteria ratings.
 
 When you produce a Review, return only JSON with this exact shape (no Markdown
 fence and no prose outside it):
@@ -49,7 +57,8 @@ fence and no prose outside it):
 \`\`\`json
 {
   "safetyRating": 0,
-  "verdict": "One concise sentence.",
+  "summary": "Two or three sentences describing what this PR changes and the main idea of the diff.",
+  "verdict": "One or two short sentences of residual risk and whether human attention is warranted.",
   "criteria": {
     "security": { "rating": 0, "reasoning": "Evidence-based reasoning." },
     "blastRadius": { "rating": 0, "reasoning": "Evidence-based reasoning." },
@@ -83,7 +92,8 @@ const instructionsByModel: Readonly<Record<string, string>> = {
 Keep each criterion's reasoning compact and evidence-led. Before choosing a
 rating below 3, identify the changed line that demonstrates the defect. Do not
 lower a rating solely because a preferred refactor or extra defense-in-depth
-measure is absent.
+measure is absent. Keep \`summary\` about the change itself and \`verdict\`
+about residual risk — do not collapse them into one field.
 `,
 };
 
