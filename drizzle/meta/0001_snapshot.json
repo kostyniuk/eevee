@@ -1,0 +1,707 @@
+{
+  "id": "849ee94f-695a-4ad9-96b1-49859f906059",
+  "prevId": "88ef8301-8c91-4251-a961-c97cb6fbe8b1",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.eval_pairs": {
+      "name": "eval_pairs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "review_record_id": {
+          "name": "review_record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "before_diff": {
+          "name": "before_diff",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "after_diff": {
+          "name": "after_diff",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shuffle_order": {
+          "name": "shuffle_order",
+          "type": "eval_shuffle_order",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "posted_at": {
+          "name": "posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "eval_pairs_review_record_idx": {
+          "name": "eval_pairs_review_record_idx",
+          "columns": [
+            {
+              "expression": "review_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "eval_pairs_review_record_id_review_records_id_fk": {
+          "name": "eval_pairs_review_record_id_review_records_id_fk",
+          "tableFrom": "eval_pairs",
+          "tableTo": "review_records",
+          "columnsFrom": ["review_record_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.eval_votes": {
+      "name": "eval_votes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "pair_id": {
+          "name": "pair_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "choice": {
+          "name": "choice",
+          "type": "eval_vote_choice",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "voter": {
+          "name": "voter",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "eval_votes_pair_voter_unique": {
+          "name": "eval_votes_pair_voter_unique",
+          "columns": [
+            {
+              "expression": "pair_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "voter",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "eval_votes_pair_idx": {
+          "name": "eval_votes_pair_idx",
+          "columns": [
+            {
+              "expression": "pair_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "eval_votes_pair_id_eval_pairs_id_fk": {
+          "name": "eval_votes_pair_id_eval_pairs_id_fk",
+          "tableFrom": "eval_votes",
+          "tableTo": "eval_pairs",
+          "columnsFrom": ["pair_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.feedback": {
+      "name": "feedback",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "review_record_id": {
+          "name": "review_record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "feedback_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "feedback_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finding_id": {
+          "name": "finding_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "author": {
+          "name": "author",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "feedback_review_record_idx": {
+          "name": "feedback_review_record_idx",
+          "columns": [
+            {
+              "expression": "review_record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "feedback_review_record_id_review_records_id_fk": {
+          "name": "feedback_review_record_id_review_records_id_fk",
+          "tableFrom": "feedback",
+          "tableTo": "review_records",
+          "columnsFrom": ["review_record_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.review_records": {
+      "name": "review_records",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_turn_id": {
+          "name": "source_turn_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository_id": {
+          "name": "repository_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repository": {
+          "name": "repository",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pull_request_number": {
+          "name": "pull_request_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewed_commit_sha": {
+          "name": "reviewed_commit_sha",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructions_version": {
+          "name": "instructions_version",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructions_source": {
+          "name": "instructions_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "criteria": {
+          "name": "criteria",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "safety_rating": {
+          "name": "safety_rating",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verdict": {
+          "name": "verdict",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "findings": {
+          "name": "findings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "review_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "superseded_by_id": {
+          "name": "superseded_by_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notification_status": {
+          "name": "notification_status",
+          "type": "review_notification_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "notification_attempted_at": {
+          "name": "notification_attempted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notification_delivered_at": {
+          "name": "notification_delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slack_channel_id": {
+          "name": "slack_channel_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "slack_message_ts": {
+          "name": "slack_message_ts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "review_records_source_turn_id_unique": {
+          "name": "review_records_source_turn_id_unique",
+          "columns": [
+            {
+              "expression": "source_turn_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_one_active_per_pr": {
+          "name": "review_records_one_active_per_pr",
+          "columns": [
+            {
+              "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "pull_request_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"review_records\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_pr_created_idx": {
+          "name": "review_records_pr_created_idx",
+          "columns": [
+            {
+              "expression": "repository_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "pull_request_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_notification_delivery_idx": {
+          "name": "review_records_notification_delivery_idx",
+          "columns": [
+            {
+              "expression": "notification_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "notification_attempted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_security_rating_idx": {
+          "name": "review_records_security_rating_idx",
+          "columns": [
+            {
+              "expression": "((\"criteria\" #>> '{security,rating}')::smallint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_blast_radius_rating_idx": {
+          "name": "review_records_blast_radius_rating_idx",
+          "columns": [
+            {
+              "expression": "((\"criteria\" #>> '{blastRadius,rating}')::smallint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_correctness_rating_idx": {
+          "name": "review_records_correctness_rating_idx",
+          "columns": [
+            {
+              "expression": "((\"criteria\" #>> '{correctness,rating}')::smallint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_data_safety_rating_idx": {
+          "name": "review_records_data_safety_rating_idx",
+          "columns": [
+            {
+              "expression": "((\"criteria\" #>> '{dataSafety,rating}')::smallint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_test_coverage_rating_idx": {
+          "name": "review_records_test_coverage_rating_idx",
+          "columns": [
+            {
+              "expression": "((\"criteria\" #>> '{testCoverage,rating}')::smallint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "review_records_readability_rating_idx": {
+          "name": "review_records_readability_rating_idx",
+          "columns": [
+            {
+              "expression": "((\"criteria\" #>> '{readability,rating}')::smallint)",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "review_records_superseded_by_id_review_records_id_fk": {
+          "name": "review_records_superseded_by_id_review_records_id_fk",
+          "tableFrom": "review_records",
+          "tableTo": "review_records",
+          "columnsFrom": ["superseded_by_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "review_records_safety_rating_check": {
+          "name": "review_records_safety_rating_check",
+          "value": "\"review_records\".\"safety_rating\" between 0 and 5"
+        },
+        "review_records_criteria_object_check": {
+          "name": "review_records_criteria_object_check",
+          "value": "jsonb_typeof(\"review_records\".\"criteria\") = 'object'"
+        },
+        "review_records_security_criterion_check": {
+          "name": "review_records_security_criterion_check",
+          "value": "\n    coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{security}') = 'object', false)\n    and case\n      when jsonb_typeof(\"review_records\".\"criteria\" #> '{security,rating}') = 'number'\n      then (\"review_records\".\"criteria\" #>> '{security,rating}')::numeric between 0 and 5\n        and (\"review_records\".\"criteria\" #>> '{security,rating}')::numeric = trunc((\"review_records\".\"criteria\" #>> '{security,rating}')::numeric)\n      else false\n    end\n    and coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{security,reasoning}') = 'string', false)\n  "
+        },
+        "review_records_blast_radius_criterion_check": {
+          "name": "review_records_blast_radius_criterion_check",
+          "value": "\n    coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{blastRadius}') = 'object', false)\n    and case\n      when jsonb_typeof(\"review_records\".\"criteria\" #> '{blastRadius,rating}') = 'number'\n      then (\"review_records\".\"criteria\" #>> '{blastRadius,rating}')::numeric between 0 and 5\n        and (\"review_records\".\"criteria\" #>> '{blastRadius,rating}')::numeric = trunc((\"review_records\".\"criteria\" #>> '{blastRadius,rating}')::numeric)\n      else false\n    end\n    and coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{blastRadius,reasoning}') = 'string', false)\n  "
+        },
+        "review_records_correctness_criterion_check": {
+          "name": "review_records_correctness_criterion_check",
+          "value": "\n    coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{correctness}') = 'object', false)\n    and case\n      when jsonb_typeof(\"review_records\".\"criteria\" #> '{correctness,rating}') = 'number'\n      then (\"review_records\".\"criteria\" #>> '{correctness,rating}')::numeric between 0 and 5\n        and (\"review_records\".\"criteria\" #>> '{correctness,rating}')::numeric = trunc((\"review_records\".\"criteria\" #>> '{correctness,rating}')::numeric)\n      else false\n    end\n    and coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{correctness,reasoning}') = 'string', false)\n  "
+        },
+        "review_records_data_safety_criterion_check": {
+          "name": "review_records_data_safety_criterion_check",
+          "value": "\n    coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{dataSafety}') = 'object', false)\n    and case\n      when jsonb_typeof(\"review_records\".\"criteria\" #> '{dataSafety,rating}') = 'number'\n      then (\"review_records\".\"criteria\" #>> '{dataSafety,rating}')::numeric between 0 and 5\n        and (\"review_records\".\"criteria\" #>> '{dataSafety,rating}')::numeric = trunc((\"review_records\".\"criteria\" #>> '{dataSafety,rating}')::numeric)\n      else false\n    end\n    and coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{dataSafety,reasoning}') = 'string', false)\n  "
+        },
+        "review_records_test_coverage_criterion_check": {
+          "name": "review_records_test_coverage_criterion_check",
+          "value": "\n    coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{testCoverage}') = 'object', false)\n    and case\n      when jsonb_typeof(\"review_records\".\"criteria\" #> '{testCoverage,rating}') = 'number'\n      then (\"review_records\".\"criteria\" #>> '{testCoverage,rating}')::numeric between 0 and 5\n        and (\"review_records\".\"criteria\" #>> '{testCoverage,rating}')::numeric = trunc((\"review_records\".\"criteria\" #>> '{testCoverage,rating}')::numeric)\n      else false\n    end\n    and coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{testCoverage,reasoning}') = 'string', false)\n  "
+        },
+        "review_records_readability_criterion_check": {
+          "name": "review_records_readability_criterion_check",
+          "value": "\n    coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{readability}') = 'object', false)\n    and case\n      when jsonb_typeof(\"review_records\".\"criteria\" #> '{readability,rating}') = 'number'\n      then (\"review_records\".\"criteria\" #>> '{readability,rating}')::numeric between 0 and 5\n        and (\"review_records\".\"criteria\" #>> '{readability,rating}')::numeric = trunc((\"review_records\".\"criteria\" #>> '{readability,rating}')::numeric)\n      else false\n    end\n    and coalesce(jsonb_typeof(\"review_records\".\"criteria\" #> '{readability,reasoning}') = 'string', false)\n  "
+        },
+        "review_records_superseded_by_check": {
+          "name": "review_records_superseded_by_check",
+          "value": "(\"review_records\".\"status\" = 'active' and \"review_records\".\"superseded_by_id\" is null) or (\"review_records\".\"status\" = 'superseded' and \"review_records\".\"superseded_by_id\" is not null)"
+        },
+        "review_records_notification_delivery_check": {
+          "name": "review_records_notification_delivery_check",
+          "value": "(\"review_records\".\"notification_status\" = 'pending' and \"review_records\".\"notification_attempted_at\" is null and \"review_records\".\"notification_delivered_at\" is null and \"review_records\".\"slack_channel_id\" is null and \"review_records\".\"slack_message_ts\" is null)\n        or (\"review_records\".\"notification_status\" = 'delivering' and \"review_records\".\"notification_attempted_at\" is not null and \"review_records\".\"notification_delivered_at\" is null and \"review_records\".\"slack_channel_id\" is null and \"review_records\".\"slack_message_ts\" is null)\n        or (\"review_records\".\"notification_status\" = 'delivered' and \"review_records\".\"notification_attempted_at\" is not null and \"review_records\".\"notification_delivered_at\" is not null and \"review_records\".\"slack_channel_id\" is not null and \"review_records\".\"slack_message_ts\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.eval_shuffle_order": {
+      "name": "eval_shuffle_order",
+      "schema": "public",
+      "values": ["before_first", "after_first"]
+    },
+    "public.eval_vote_choice": {
+      "name": "eval_vote_choice",
+      "schema": "public",
+      "values": ["before", "after"]
+    },
+    "public.feedback_kind": {
+      "name": "feedback_kind",
+      "schema": "public",
+      "values": ["vote", "text"]
+    },
+    "public.feedback_source": {
+      "name": "feedback_source",
+      "schema": "public",
+      "values": ["github", "slack"]
+    },
+    "public.review_notification_status": {
+      "name": "review_notification_status",
+      "schema": "public",
+      "values": ["pending", "delivering", "delivered"]
+    },
+    "public.review_status": {
+      "name": "review_status",
+      "schema": "public",
+      "values": ["active", "superseded"]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

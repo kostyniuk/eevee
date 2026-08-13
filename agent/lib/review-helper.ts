@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { reviewerInstructions } from "./reviewer-instructions";
+
 const criterionSchema = z.object({
   rating: z.number().int().min(0).max(5),
   reasoning: z.string().trim().min(1),
@@ -46,7 +48,7 @@ export function parseReview(message: string): Review {
     : trimmed;
   const review = reviewSchema.parse(JSON.parse(json));
 
-  if (review.safetyRating >= 3 && review.findings.length > 0) {
+  if (review.safetyRating >= reviewerInstructions.findingThreshold && review.findings.length > 0) {
     return { ...review, findings: [] };
   }
 
@@ -85,7 +87,7 @@ export function formatReviewBody(review: Review): string {
 }
 
 export function formatReviewComments(review: Review) {
-  if (review.safetyRating >= 3) return [];
+  if (review.safetyRating >= reviewerInstructions.findingThreshold) return [];
 
   return review.findings.map((finding) => ({
     path: finding.path,

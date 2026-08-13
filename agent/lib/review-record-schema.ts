@@ -19,6 +19,11 @@ import {
 import type { Review } from "./review-helper";
 
 export const reviewStatus = pgEnum("review_status", ["active", "superseded"]);
+export const reviewNotificationStatus = pgEnum("review_notification_status", [
+  "pending",
+  "delivering",
+  "delivered",
+]);
 export const feedbackSource = pgEnum("feedback_source", ["github", "slack"]);
 export const feedbackKind = pgEnum("feedback_kind", ["vote", "text"]);
 export const evalShuffleOrder = pgEnum("eval_shuffle_order", ["before_first", "after_first"]);
@@ -58,6 +63,14 @@ export const reviewRecords = pgTable(
     findings: jsonb().$type<readonly StoredFinding[]>().notNull(),
     status: reviewStatus().notNull().default("active"),
     supersededById: uuid("superseded_by_id").references((): AnyPgColumn => reviewRecords.id),
+    notificationStatus: reviewNotificationStatus("notification_status")
+      .notNull()
+      .default("pending"),
+    notificationAttemptedAt: timestamp("notification_attempted_at", { withTimezone: true }),
+    notificationClaimedAt: timestamp("notification_claimed_at", { withTimezone: true }),
+    notificationDeliveredAt: timestamp("notification_delivered_at", { withTimezone: true }),
+    slackChannelId: text("slack_channel_id"),
+    slackMessageTs: text("slack_message_ts"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -68,6 +81,11 @@ export const reviewRecords = pgTable(
     index("review_records_pr_created_idx").on(
       table.repositoryId,
       table.pullRequestNumber,
+      table.createdAt,
+    ),
+    index("review_records_notification_delivery_idx").on(
+      table.notificationStatus,
+      table.notificationClaimedAt,
       table.createdAt,
     ),
     ...criterionKeys.map(([key, name]) =>
@@ -81,6 +99,12 @@ export const reviewRecords = pgTable(
     check(
       "review_records_superseded_by_check",
       sql`(${table.status} = 'active' and ${table.supersededById} is null) or (${table.status} = 'superseded' and ${table.supersededById} is not null)`,
+    ),
+    check(
+      "review_records_notification_delivery_check",
+      sql`(${table.notificationStatus} = 'pending' and ${table.notificationAttemptedAt} is null and ${table.notificationClaimedAt} is null and ${table.notificationDeliveredAt} is null and ${table.slackChannelId} is null and ${table.slackMessageTs} is null)
+        or (${table.notificationStatus} = 'delivering' and ${table.notificationAttemptedAt} is not null and ${table.notificationClaimedAt} is not null and ${table.notificationDeliveredAt} is null and ${table.slackChannelId} is null and ${table.slackMessageTs} is null)
+        or (${table.notificationStatus} = 'delivered' and ${table.notificationAttemptedAt} is not null and ${table.notificationClaimedAt} is not null and ${table.notificationDeliveredAt} is not null and ${table.slackChannelId} is not null and ${table.slackMessageTs} is not null)`,
     ),
   ],
 );

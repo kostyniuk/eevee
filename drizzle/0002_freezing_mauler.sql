@@ -1,0 +1,8 @@
+ALTER TABLE "review_records" DROP CONSTRAINT "review_records_notification_delivery_check";--> statement-breakpoint
+DROP INDEX "review_records_notification_delivery_idx";--> statement-breakpoint
+ALTER TABLE "review_records" ADD COLUMN "notification_claimed_at" timestamp with time zone;--> statement-breakpoint
+UPDATE "review_records" SET "notification_claimed_at" = "notification_attempted_at" WHERE "notification_status" <> 'pending';--> statement-breakpoint
+CREATE INDEX "review_records_notification_delivery_idx" ON "review_records" USING btree ("notification_status","notification_claimed_at","created_at");--> statement-breakpoint
+ALTER TABLE "review_records" ADD CONSTRAINT "review_records_notification_delivery_check" CHECK (("review_records"."notification_status" = 'pending' and "review_records"."notification_attempted_at" is null and "review_records"."notification_claimed_at" is null and "review_records"."notification_delivered_at" is null and "review_records"."slack_channel_id" is null and "review_records"."slack_message_ts" is null)
+        or ("review_records"."notification_status" = 'delivering' and "review_records"."notification_attempted_at" is not null and "review_records"."notification_claimed_at" is not null and "review_records"."notification_delivered_at" is null and "review_records"."slack_channel_id" is null and "review_records"."slack_message_ts" is null)
+        or ("review_records"."notification_status" = 'delivered' and "review_records"."notification_attempted_at" is not null and "review_records"."notification_claimed_at" is not null and "review_records"."notification_delivered_at" is not null and "review_records"."slack_channel_id" is not null and "review_records"."slack_message_ts" is not null));

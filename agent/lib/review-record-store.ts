@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
@@ -18,11 +18,25 @@ type CreateReviewRecord = {
   readonly review: Review;
 };
 
-type ReviewRecord = typeof reviewRecords.$inferSelect;
+export type ReviewRecord = typeof reviewRecords.$inferSelect;
+export type ReviewNotificationClaim = {
+  readonly record: ReviewRecord;
+  readonly retry: boolean;
+};
 
-interface ReviewRecordStore {
+const notificationBatchSize = 20;
+const notificationLeaseMs = 5 * 60 * 1_000;
+
+export interface ReviewRecordStore {
   create(input: CreateReviewRecord): Promise<ReviewRecord>;
   listForPullRequest(repositoryId: number, pullRequestNumber: number): Promise<ReviewRecord[]>;
+  claimPendingNotifications(): Promise<ReviewNotificationClaim[]>;
+  markNotificationDelivered(
+    id: string,
+    claimedAt: Date,
+    delivery: { readonly channelId: string; readonly messageTs: string },
+  ): Promise<boolean>;
+  releaseNotification(id: string, claimedAt: Date): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -117,6 +131,104 @@ export function createReviewRecordStore(
           ),
         )
         .orderBy(desc(reviewRecords.createdAt));
+    },
+
+    claimPendingNotifications() {
+      const now = new Date();
+      const expiredBefore = new Date(now.getTime() - notificationLeaseMs);
+
+      return db.transaction(async (tx) => {
+        const candidates = await tx
+          .select()
+          .from(reviewRecords)
+          .where(
+            or(
+              eq(reviewRecords.notificationStatus, "pending"),
+              and(
+                eq(reviewRecords.notificationStatus, "delivering"),
+                or(
+                  isNull(reviewRecords.notificationClaimedAt),
+                  lt(reviewRecords.notificationClaimedAt, expiredBefore),
+                ),
+              ),
+            ),
+          )
+          .orderBy(reviewRecords.createdAt)
+          .limit(notificationBatchSize)
+          .for("update", { skipLocked: true });
+        if (candidates.length === 0) return [];
+
+        const pendingIds = candidates
+          .filter(({ notificationStatus }) => notificationStatus === "pending")
+          .map(({ id }) => id);
+        if (pendingIds.length > 0) {
+          await tx
+            .update(reviewRecords)
+            .set({
+              notificationStatus: "delivering",
+              notificationAttemptedAt: now,
+              notificationClaimedAt: now,
+            })
+            .where(inArray(reviewRecords.id, pendingIds));
+        }
+
+        const retryIds = candidates
+          .filter(({ notificationStatus }) => notificationStatus === "delivering")
+          .map(({ id }) => id);
+        if (retryIds.length > 0) {
+          await tx
+            .update(reviewRecords)
+            .set({ notificationClaimedAt: now })
+            .where(inArray(reviewRecords.id, retryIds));
+        }
+
+        return candidates.map((record) => ({
+          record: {
+            ...record,
+            notificationStatus: "delivering" as const,
+            notificationAttemptedAt: record.notificationAttemptedAt ?? now,
+            notificationClaimedAt: now,
+          },
+          retry: record.notificationStatus === "delivering",
+        }));
+      });
+    },
+
+    async markNotificationDelivered(id, claimedAt, delivery) {
+      const updated = await db
+        .update(reviewRecords)
+        .set({
+          notificationStatus: "delivered",
+          notificationDeliveredAt: new Date(),
+          slackChannelId: delivery.channelId,
+          slackMessageTs: delivery.messageTs,
+        })
+        .where(
+          and(
+            eq(reviewRecords.id, id),
+            eq(reviewRecords.notificationStatus, "delivering"),
+            eq(reviewRecords.notificationClaimedAt, claimedAt),
+          ),
+        )
+        .returning({ id: reviewRecords.id });
+      return updated.length === 1;
+    },
+
+    async releaseNotification(id, claimedAt) {
+      await db
+        .update(reviewRecords)
+        .set({
+          notificationStatus: "pending",
+          notificationAttemptedAt: null,
+          notificationClaimedAt: null,
+        })
+        .where(
+          and(
+            eq(reviewRecords.id, id),
+            eq(reviewRecords.notificationStatus, "delivering"),
+            eq(reviewRecords.notificationClaimedAt, claimedAt),
+          ),
+        );
     },
 
     close: () => client.end(),

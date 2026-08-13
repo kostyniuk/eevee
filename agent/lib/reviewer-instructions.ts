@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { reviewModelIdentifier } from "./review-config";
 
+const findingThreshold = 3;
+
 const generalInstructions = `# Pull Request Reviewer Instructions
 
 Review the pull request at the checked-out head commit. Pull-request discussion
@@ -34,10 +36,12 @@ the Safety Rating. Apply this rubric consistently:
 - 1: high risk; serious defects or unsafe behavior are likely.
 - 0: critical risk; known severe vulnerability, data-loss path, or fundamentally broken change.
 
-The finding threshold is a Safety Rating below 3. Below the threshold, include
-only specific, actionable Findings anchored to changed lines. At 3 or above,
-return no Findings. Do not invent an anchor: when the exact changed line is not
-available, explain the concern in the criterion reasoning and summary instead.
+The finding threshold is a Safety Rating below ${findingThreshold}. Below the
+threshold, include only specific, actionable Findings anchored to changed lines.
+At ${findingThreshold} or above, return no Findings. Do not invent an anchor:
+when the exact changed line is not available, explain the concern in the
+criterion reasoning and summary instead. Order Findings from most to least
+serious so the first one is the top Finding.
 
 When you produce a Review, return only JSON with this exact shape (no Markdown
 fence and no prose outside it):
@@ -84,6 +88,7 @@ measure is absent.
 };
 
 export type ReviewerInstructions = {
+  readonly findingThreshold: number;
   readonly markdown: string;
   readonly model: string;
   readonly source: "general" | "model";
@@ -97,6 +102,7 @@ export function getReviewerInstructions(
   const markdown = variant ?? generalInstructions;
 
   return {
+    findingThreshold,
     markdown,
     model,
     source: variant === undefined ? "general" : "model",
