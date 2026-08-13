@@ -27,6 +27,7 @@ const record: ReviewRecord = {
     readability: { rating: 4, reasoning: "Clear." },
   },
   safetyRating: 4,
+  summary: "Narrow fixture change for notification delivery tests.",
   verdict: "Safe to review.",
   findings: [],
   status: "active",

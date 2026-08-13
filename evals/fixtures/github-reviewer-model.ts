@@ -2,7 +2,9 @@ import { mockModel } from "eve/evals";
 
 const safeReview = {
   safetyRating: 4,
-  verdict: "The focused change is low risk and ready for human review.",
+  summary:
+    "Updates a narrowly scoped helper used by a single call path, with no public API or data-model changes.",
+  verdict: "Low residual risk; ready for human review.",
   criteria: {
     security: { rating: 5, reasoning: "No security boundary changes." },
     blastRadius: { rating: 4, reasoning: "The change is narrowly scoped." },
@@ -16,7 +18,9 @@ const safeReview = {
 
 const riskyReview = {
   safetyRating: 2,
-  verdict: "The change has a correctness defect that should be fixed before merging.",
+  summary:
+    "Introduces a new branch in the example helper that is meant to return the computed value for callers.",
+  verdict: "Correctness defect should be fixed before merging.",
   criteria: {
     security: { rating: 4, reasoning: "No direct security regression is visible." },
     blastRadius: { rating: 2, reasoning: "The defect affects every caller." },

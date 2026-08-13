@@ -91,6 +91,7 @@ export function createReviewRecordStore(
           instructionsSource: input.instructions.source,
           criteria: input.review.criteria,
           safetyRating: input.review.safetyRating,
+          summary: input.review.summary,
           verdict: input.review.verdict,
           findings,
         } as const;

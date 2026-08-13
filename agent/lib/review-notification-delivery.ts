@@ -127,9 +127,14 @@ export async function deliverPendingReviewNotifications(options: Delivery): Prom
 export function formatReviewNotification(record: ReviewRecord): string {
   const pullRequestUrl = `https://github.com/${record.repository}/pull/${record.pullRequestNumber}`;
   const reference = `${record.repository}#${record.pullRequestNumber}`;
+  const summary = collapseWhitespace(record.summary);
+  const verdict = collapseWhitespace(record.verdict);
   const lines = [
     `:shield: *Safety Rating: ${record.safetyRating}/5* · <${pullRequestUrl}|${escapeMarkup(reference)}>`,
-    escapeMarkup(record.verdict.replace(/\s+/gu, " ").trim()),
+    "",
+    `:memo: *Summary:* ${escapeMarkup(summary)}`,
+    "",
+    `:scales: *Verdict:* ${escapeMarkup(verdict)}`,
   ];
 
   const topFinding =
@@ -137,12 +142,16 @@ export function formatReviewNotification(record: ReviewRecord): string {
   if (topFinding) {
     lines.push(
       "",
-      `*Top finding — ${escapeMarkup(topFinding.title)}*`,
+      `:pushpin: *Top finding — ${escapeMarkup(topFinding.title)}*`,
       escapeMarkup(topFinding.body),
     );
   }
 
   return lines.join("\n");
+}
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
 }
 
 async function deliverReviewNotification(

@@ -59,6 +59,7 @@ export const reviewRecords = pgTable(
     instructionsSource: text("instructions_source").notNull(),
     criteria: jsonb().$type<Review["criteria"]>().notNull(),
     safetyRating: smallint("safety_rating").notNull(),
+    summary: text().notNull(),
     verdict: text().notNull(),
     findings: jsonb().$type<readonly StoredFinding[]>().notNull(),
     status: reviewStatus().notNull().default("active"),

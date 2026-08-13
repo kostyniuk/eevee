@@ -17,7 +17,8 @@ export default defineEval({
         (body) =>
           typeof body === "string" &&
           body.includes("Safety Rating: 4/5") &&
-          body.includes("| Security |"),
+          body.includes("<details>") &&
+          body.includes("**🔒 Security ·"),
         "rating and criterion reasoning",
       ),
     );

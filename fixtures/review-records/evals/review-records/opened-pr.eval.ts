@@ -55,7 +55,11 @@ export default defineEval({
       );
       t.check(
         deliveredMessage?.body.get("text"),
-        includes("The change needs a targeted fix before merging."),
+        includes("*Summary:*"),
+      );
+      t.check(
+        deliveredMessage?.body.get("text"),
+        includes("Targeted correctness fix needed before merging."),
       );
       t.check(deliveredMessage?.body.get("text"), includes("Top finding — Handle the empty input"));
 
@@ -90,6 +94,7 @@ export default defineEval({
         instructions: reviewerInstructions,
         review: {
           safetyRating: 4,
+          summary: "Follow-up fix for the empty-input edge case.",
           verdict: "The follow-up is safe.",
           criteria: record.criteria,
           findings: [],
