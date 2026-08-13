@@ -19,7 +19,11 @@ columns.
 3. Set `DATABASE_DIRECT_URL` to the direct connection string (or the session
    pooler when IPv6 is unavailable). This connection is used only by Drizzle
    migrations.
-4. Add both variables to the production environment, then run
+4. Set `SLACK_REVIEW_CHANNEL_ID` to the ID of the notifications channel. The
+   Slack connector needs `chat:write` plus the matching history scope
+   (`channels:history` for a public channel or `groups:history` for a private
+   channel) so an interrupted delivery can be matched by message metadata.
+5. Add all three variables to the production environment, then run
    `npm run db:migrate` with those variables available.
 
 Never commit either connection string. `.env.example` contains safe templates.
@@ -44,9 +48,10 @@ npm run db:generate
 
 The ReviewRecord edge eval starts the local database, applies the checked-in
 migrations, and builds a temporary fixture agent from `agent/lib`. It
-overlays only the mock model and fake GitHub credentials, drives a signed
-GitHub `pull_request.opened` webhook through eve, and reads the resulting row
-back through the store:
+overlays the mock model and fake GitHub and Slack credentials. It drives a
+signed GitHub `pull_request.opened` webhook through eve, reads the resulting
+row through the store, and asserts the immediate Slack Web API call against a
+local HTTP stub on port 43120:
 
 ```bash
 npm run eval:review-records

@@ -12,6 +12,11 @@ import {
   reviewAuth,
   tryParseReview,
 } from "./review-helper";
+import { escapeMarkup } from "./escape-markup";
+import {
+  deliverPendingReviewNotifications,
+  type ReviewNotificationClient,
+} from "./review-notification-delivery";
 import { getReviewRecordStore } from "./review-record-store";
 import type { ReviewerInstructions } from "./reviewer-instructions";
 
@@ -24,6 +29,10 @@ export function createGitHubChannel(options: {
   readonly credentials: GitHubChannelCredentials;
   readonly apiBaseUrl?: string;
   readonly instructions: ReviewerInstructions;
+  readonly notifications: {
+    readonly channelId: string;
+    readonly client: ReviewNotificationClient;
+  };
 }) {
   return githubChannel({
     botName,
@@ -86,7 +95,8 @@ export function createGitHubChannel(options: {
           },
         });
 
-        await getReviewRecordStore().create({
+        const store = getReviewRecordStore();
+        await store.create({
           sourceTurnId: `${ctx.session.id}:${data.turnId}`,
           repositoryId: channel.repository.id,
           repository: channel.repository.fullName,
@@ -94,6 +104,10 @@ export function createGitHubChannel(options: {
           reviewedCommitSha,
           instructions: options.instructions,
           review,
+        });
+        await deliverPendingReviewNotifications({
+          ...options.notifications,
+          store,
         });
       },
     },
@@ -152,7 +166,7 @@ function formatDiscussionLine(comment: GitHubDiscussionComment): string | null {
 }
 
 function quoteUntrusted(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return escapeMarkup(value);
 }
 
 function isDiscussionComment(value: unknown): value is GitHubDiscussionComment {

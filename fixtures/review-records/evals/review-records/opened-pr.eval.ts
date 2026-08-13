@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomInt } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 
 import { defineEval, type EveEvalContext } from "eve/evals";
 import { equals, includes } from "eve/evals/expect";
@@ -18,6 +18,7 @@ export default defineEval({
   description: "An opened PR persists the complete review in real Postgres.",
   async test(t) {
     const api = await startGitHubApiStub();
+    const slack = await startSlackApiStub();
     const store = createReviewRecordStore();
 
     try {
@@ -38,6 +39,36 @@ export default defineEval({
       t.check(record.findings.length, equals(1));
       t.check(record.findings[0]?.path, equals("agent/example.ts"));
       t.check(api.reviewCount(), equals(1));
+
+      const deliveredMessage = await waitForSlackMessage(t, slack, record.id);
+      t.check(deliveredMessage?.authorization, equals("Bearer fixture-slack-token"));
+      t.check(deliveredMessage?.body.get("channel"), equals("C_REVIEW_FIXTURE"));
+      t.check(deliveredMessage?.body.get("client_msg_id"), equals(null));
+      t.check(
+        deliveredMessage?.body.get("metadata"),
+        includes(`"review_record_id":"${record.id}"`),
+      );
+      t.check(deliveredMessage?.body.get("text"), includes("Safety Rating: 2/5"));
+      t.check(
+        deliveredMessage?.body.get("text"),
+        includes(`https://github.com/kostyniuk/fixture/pull/${pullRequestNumber}`),
+      );
+      t.check(
+        deliveredMessage?.body.get("text"),
+        includes("The change needs a targeted fix before merging."),
+      );
+      t.check(deliveredMessage?.body.get("text"), includes("Top finding — Handle the empty input"));
+
+      t.check(
+        slack.messages().filter(({ body }) => metadataReviewRecordId(body) === record.id).length,
+        equals(1),
+      );
+      const deliveredRecord = (
+        await store.listForPullRequest(repositoryId, pullRequestNumber)
+      ).find(({ id }) => id === record.id);
+      t.check(deliveredRecord?.notificationStatus, equals("delivered"));
+      t.check(deliveredRecord?.slackChannelId, equals("C_REVIEW_FIXTURE"));
+      t.check(deliveredRecord?.slackMessageTs, equals(`fixture-${record.id}`));
 
       api.rejectReviews();
       const rejectedResponse = await sendPullRequest(t, rejectedPullRequestNumber);
@@ -75,6 +106,7 @@ export default defineEval({
       t.check(fallback.version, includes(/^[a-f0-9]{64}$/u));
     } finally {
       await store.close();
+      await slack.close();
       await api.close();
     }
   },
@@ -92,6 +124,95 @@ function sendPullRequest(t: EveEvalContext, number: number) {
     },
     body,
   });
+}
+
+type CapturedSlackMessage = {
+  readonly authorization: string | undefined;
+  readonly body: URLSearchParams;
+};
+
+async function startSlackApiStub(): Promise<{
+  close(): Promise<void>;
+  messages(): readonly CapturedSlackMessage[];
+}> {
+  const messages: CapturedSlackMessage[] = [];
+  const server = createServer(async (request, response) => {
+    response.setHeader("content-type", "application/json");
+
+    if (request.method === "POST" && request.url === "/api/chat.postMessage") {
+      const body = new URLSearchParams(await readBody(request));
+      messages.push({ authorization: request.headers.authorization, body });
+      const reviewRecordId = metadataReviewRecordId(body);
+      response.end(
+        JSON.stringify({
+          ok: true,
+          channel: body.get("channel"),
+          ts: `fixture-${reviewRecordId}`,
+        }),
+      );
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/conversations.history") {
+      response.end(
+        JSON.stringify({
+          ok: true,
+          messages: messages.map(({ body }) => ({
+            metadata: JSON.parse(body.get("metadata") ?? "null"),
+            ts: `fixture-${metadataReviewRecordId(body)}`,
+          })),
+          response_metadata: { next_cursor: "" },
+        }),
+      );
+      return;
+    }
+
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: `Unhandled ${request.method} ${request.url}` }));
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(43_120, "127.0.0.1", resolve);
+  });
+
+  return {
+    messages: () => messages,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
+}
+
+async function readBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function waitForSlackMessage(
+  t: EveEvalContext,
+  slack: { messages(): readonly CapturedSlackMessage[] },
+  clientMessageId: string,
+): Promise<CapturedSlackMessage> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const message = slack
+      .messages()
+      .find(({ body }) => metadataReviewRecordId(body) === clientMessageId);
+    if (message) return message;
+    await t.sleep(50);
+  }
+
+  throw new Error("Timed out waiting for the Review notification Slack request.");
+}
+
+function metadataReviewRecordId(body: URLSearchParams): string | null {
+  const raw = body.get("metadata");
+  if (!raw) return null;
+  const metadata = JSON.parse(raw) as { event_payload?: { review_record_id?: unknown } };
+  const id = metadata.event_payload?.review_record_id;
+  return typeof id === "string" ? id : null;
 }
 
 async function waitForRecord(t: EveEvalContext, store: ReturnType<typeof createReviewRecordStore>) {
