@@ -3,12 +3,15 @@
   "version": "0.0.0",
   "type": "module",
   "imports": {
-    "#*": "./agent/*",
-    "#evals/*": "./evals/*"
+    "#*": "./agent/*.ts"
   },
   "scripts": {
     "build": "eve build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
     "dev": "eve dev",
+    "eval:review-records": "sh scripts/eval-review-records.sh",
     "start": "eve start",
     "typecheck": "tsc",
     "fmt": "oxfmt",
@@ -18,11 +21,14 @@
     "@ai-sdk/openai": "^4.0.35",
     "@vercel/connect": ">=0.6.0",
     "ai": "^7.0.58",
+    "drizzle-orm": "^0.45.2",
     "eve": "^0.33.2",
+    "postgres": "^3.4.9",
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "24.x",
+    "@types/node": "^24.13.3",
+    "drizzle-kit": "^0.31.10",
     "oxfmt": "^0.62.0",
     "typescript": "7.0.2",
     "vercel": "^58.9.0"
