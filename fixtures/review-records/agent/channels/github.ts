@@ -1,9 +1,9 @@
 import { createGitHubChannel } from "#lib/github-channel";
 import {
-  createSlackReviewNotificationClient,
+  createSlackNotificationApi,
   type SlackApiCall,
   type SlackResponse,
-} from "#lib/review-notification-delivery";
+} from "#lib/review-notification-service";
 import { reviewerInstructions } from "#lib/reviewer-instructions";
 
 export const githubFixture = {
@@ -51,6 +51,6 @@ export default createGitHubChannel({
   instructions: reviewerInstructions,
   notifications: {
     channelId: "C_REVIEW_FIXTURE",
-    client: createSlackReviewNotificationClient("fixture-slack-token", callFixtureSlackApi),
+    slack: createSlackNotificationApi("fixture-slack-token", callFixtureSlackApi),
   },
 });

@@ -23,7 +23,7 @@ priorities are the weights used to calculate the Safety Rating:
 | Correctness      |        3 | Whether the change does what it claims across normal and edge cases             |
 | Data safety      |        3 | Loss, corruption, unsafe migrations, races, and irreversible effects            |
 | Blast radius     |        2 | Scope of impact, compatibility, rollback difficulty, and failure containment    |
-| Test coverage    |        2 | Whether changed behavior has proportionate automated coverage                   |
+| Test coverage    |        2 | Whether *new runtime behavior* has proportionate coverage — not “did they add a test file” |
 | Readability      |        1 | Clarity, maintainability, naming, and fit with repository conventions           |
 
 Calculate the weighted average, then round it to the nearest whole number for
@@ -35,6 +35,24 @@ the Safety Rating. Apply this rubric consistently:
 - 2: significant risk; at least one likely defect or material gap.
 - 1: high risk; serious defects or unsafe behavior are likely.
 - 0: critical risk; known severe vulnerability, data-loss path, or fundamentally broken change.
+
+Grade **test coverage** on proportion to the change, not on whether a test
+file appears in the diff. This used to be too harsh: docs, renames, formatting,
+and instruction-only PRs were punished for “no new tests.” Use this rubric:
+
+- 5: no new runtime behavior (docs, comments, types, config, review instructions),
+  or the changed path is already exercised by existing tests.
+- 4: a follow-up test would be nice; the gap is not load-bearing.
+- 3: meaningful behavior changed without a matching test, but the blast radius
+  is small.
+- 2: new or changed logic with no coverage on a path that can fail in production.
+  This is the floor for “no tests on new behavior” (UI, Slack, adapters, refactors).
+- 0–1: **only** if the reasoning names one of: auth, money/billing, or durable
+  user/data loss — or existing tests were deleted and not replaced.
+
+Never rate testCoverage 0 or 1 unless that sentence is true. Missing tests on a
+Slack button, CLI, or helper is a 2 or 3, not a 1. Do not put testCoverage
+below 3 solely because the PR added no test file.
 
 The finding threshold is a Safety Rating below ${findingThreshold}. Below the
 threshold, include only specific, actionable Findings anchored to changed lines.
@@ -91,8 +109,8 @@ const instructionsByModel: Readonly<Record<string, string>> = {
 
 Keep each criterion's reasoning compact and evidence-led. Before choosing a
 rating below 3, identify the changed line that demonstrates the defect. Do not
-lower a rating solely because a preferred refactor or extra defense-in-depth
-measure is absent. Keep \`summary\` about the change itself and \`verdict\`
+lower a rating solely because a preferred refactor, extra test file, or
+defense-in-depth measure is absent. Keep \`summary\` about the change itself and \`verdict\`
 about residual risk — do not collapse them into one field.
 `,
 };

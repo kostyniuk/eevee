@@ -1,5 +1,7 @@
 # Evals measure review impact, not review text
 
+> NOT SHIPPED. The ReviewRecord is shaped for this (reviewed commit + later merged diff). Blind A/B pairs, the eval Slack channel, and harvest-on-close are spec only.
+
 An Eval Comparison judges the code before the Review against the code after the author responded (blind, order shuffled), rather than judging two competing reviews of the same diff. We chose this because it costs no extra LLM runs (pairs are harvested from PR history at close), and because "did the code get better?" is the outcome we actually care about. Model-vs-model comparison is deliberately deferred to aggregate statistics over thousands of ReviewRecords (each records its model and instructions version), not pairwise review-text judging.
 
 ## Consequences
