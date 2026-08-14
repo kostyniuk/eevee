@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { reviewModelIdentifier } from "./review-config";
 
-const findingThreshold = 3;
+const findingThreshold = 5;
 
 const generalInstructions = `# Pull Request Reviewer Instructions
 

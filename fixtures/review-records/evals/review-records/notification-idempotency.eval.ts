@@ -7,6 +7,7 @@ import {
   formatSlackNotification,
 } from "#lib/review-notification-service";
 import type { ReviewRecord, ReviewRecordDao } from "#lib/review-record-dao";
+import { reviewerInstructions } from "#lib/reviewer-instructions";
 
 const record: ReviewRecord = {
   id: "18fce0f7-9c2b-4542-8bb8-93a8a849e24a",
@@ -114,7 +115,7 @@ export default defineEval({
     t.check(
       formatSlackNotification({
         ...record,
-        safetyRating: 3,
+        safetyRating: reviewerInstructions.findingThreshold,
         findings: [
           {
             id: "e6ac22bb-e07d-43ea-bccf-a7f77cc2644c",
