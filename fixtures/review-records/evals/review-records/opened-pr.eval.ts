@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage } from "node:http";
 import { defineEval, type EveEvalContext } from "eve/evals";
 import { equals, includes } from "eve/evals/expect";
 
-import { createReviewRecordStore } from "#lib/review-record-store";
+import { createReviewRecordDao } from "#lib/review-record-dao";
 import { getReviewerInstructions, reviewerInstructions } from "#lib/reviewer-instructions";
 import { githubFixture } from "../../agent/channels/github";
 
@@ -19,13 +19,13 @@ export default defineEval({
   async test(t) {
     const api = await startGitHubApiStub();
     const slack = await startSlackApiStub();
-    const store = createReviewRecordStore();
+    const dao = createReviewRecordDao();
 
     try {
       const response = await sendPullRequest(t, pullRequestNumber);
       t.check(response.status, equals(200));
 
-      const record = await waitForRecord(t, store);
+      const record = await waitForRecord(t, dao);
       t.check(record.repository, equals("kostyniuk/fixture"));
       t.check(record.pullRequestNumber, equals(pullRequestNumber));
       t.check(record.reviewedCommitSha, equals(headSha));
@@ -53,10 +53,7 @@ export default defineEval({
         deliveredMessage?.body.get("text"),
         includes(`https://github.com/kostyniuk/fixture/pull/${pullRequestNumber}`),
       );
-      t.check(
-        deliveredMessage?.body.get("text"),
-        includes("*Summary:*"),
-      );
+      t.check(deliveredMessage?.body.get("text"), includes("*Summary:*"));
       t.check(
         deliveredMessage?.body.get("text"),
         includes("Targeted correctness fix needed before merging."),
@@ -67,9 +64,9 @@ export default defineEval({
         slack.messages().filter(({ body }) => metadataReviewRecordId(body) === record.id).length,
         equals(1),
       );
-      const deliveredRecord = (
-        await store.listForPullRequest(repositoryId, pullRequestNumber)
-      ).find(({ id }) => id === record.id);
+      const deliveredRecord = (await dao.listForPullRequest(repositoryId, pullRequestNumber)).find(
+        ({ id }) => id === record.id,
+      );
       t.check(deliveredRecord?.notificationStatus, equals("delivered"));
       t.check(deliveredRecord?.slackChannelId, equals("C_REVIEW_FIXTURE"));
       t.check(deliveredRecord?.slackMessageTs, equals(`fixture-${record.id}`));
@@ -79,13 +76,10 @@ export default defineEval({
       t.check(rejectedResponse.status, equals(200));
       await waitForReviewAttempt(t, api, 2);
       await t.sleep(250);
-      const rejectedRecords = await store.listForPullRequest(
-        repositoryId,
-        rejectedPullRequestNumber,
-      );
+      const rejectedRecords = await dao.listForPullRequest(repositoryId, rejectedPullRequestNumber);
       t.check(rejectedRecords.length, equals(0));
 
-      const replacement = await store.create({
+      const replacement = await dao.create({
         sourceTurnId: `eval:${randomBytes(12).toString("hex")}`,
         repositoryId,
         repository: record.repository,
@@ -100,7 +94,7 @@ export default defineEval({
           findings: [],
         },
       });
-      const records = await store.listForPullRequest(repositoryId, pullRequestNumber);
+      const records = await dao.listForPullRequest(repositoryId, pullRequestNumber);
       const superseded = records.find(({ id }) => id === record.id);
       t.check(replacement.status, equals("active"));
       t.check(superseded?.status, equals("superseded"));
@@ -110,7 +104,7 @@ export default defineEval({
       t.check(fallback.source, equals("general"));
       t.check(fallback.version, includes(/^[a-f0-9]{64}$/u));
     } finally {
-      await store.close();
+      await dao.close();
       await slack.close();
       await api.close();
     }
@@ -220,9 +214,9 @@ function metadataReviewRecordId(body: URLSearchParams): string | null {
   return typeof id === "string" ? id : null;
 }
 
-async function waitForRecord(t: EveEvalContext, store: ReturnType<typeof createReviewRecordStore>) {
+async function waitForRecord(t: EveEvalContext, dao: ReturnType<typeof createReviewRecordDao>) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    const records = await store.listForPullRequest(repositoryId, pullRequestNumber);
+    const records = await dao.listForPullRequest(repositoryId, pullRequestNumber);
     const record = records.find((candidate) => candidate.reviewedCommitSha === headSha);
     if (record) return record;
     await t.sleep(250);

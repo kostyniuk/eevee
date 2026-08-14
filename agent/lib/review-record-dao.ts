@@ -19,30 +19,40 @@ type CreateReviewRecord = {
 };
 
 export type ReviewRecord = typeof reviewRecords.$inferSelect;
-export type ReviewNotificationClaim = {
+
+/**
+ * A row we locked for Slack delivery.
+ *
+ * `attempt` is not a config flag. The DAO sets it from the row we just claimed:
+ * - `first` — was `pending`. Slack should not have this message yet. Just post.
+ * - `uncertain_retry` — was already `delivering` and the 5-minute lease expired.
+ *   Slack may already have the message (post succeeded, DB never recorded it).
+ *   The service must search Slack before posting again.
+ */
+export type NotificationClaim = {
   readonly record: ReviewRecord;
-  readonly retry: boolean;
+  readonly attempt: "first" | "uncertain_retry";
 };
 
 const notificationBatchSize = 20;
 const notificationLeaseMs = 5 * 60 * 1_000;
 
-export interface ReviewRecordStore {
+export interface ReviewRecordDao {
   create(input: CreateReviewRecord): Promise<ReviewRecord>;
   listForPullRequest(repositoryId: number, pullRequestNumber: number): Promise<ReviewRecord[]>;
-  claimPendingNotifications(): Promise<ReviewNotificationClaim[]>;
-  markNotificationDelivered(
+  claimForDelivery(): Promise<NotificationClaim[]>;
+  markDelivered(
     id: string,
     claimedAt: Date,
     delivery: { readonly channelId: string; readonly messageTs: string },
   ): Promise<boolean>;
-  releaseNotification(id: string, claimedAt: Date): Promise<void>;
+  releaseClaim(id: string, claimedAt: Date): Promise<void>;
   close(): Promise<void>;
 }
 
-export function createReviewRecordStore(
+export function createReviewRecordDao(
   databaseUrl: string = requiredDatabaseUrl(),
-): ReviewRecordStore {
+): ReviewRecordDao {
   const client = postgres(databaseUrl, {
     max: 4,
     prepare: false,
@@ -53,6 +63,8 @@ export function createReviewRecordStore(
 
   return {
     async create(input) {
+      // Same eve turn (sessionId:turnId) → same row if a crashed step re-runs.
+      // Pre-select is outside the txn; unique index source_turn_id is the real guard.
       const existing = await db
         .select()
         .from(reviewRecords)
@@ -101,7 +113,8 @@ export function createReviewRecordStore(
           return requiredRecord(inserted);
         }
 
-        // The old row cannot point at the replacement until its foreign key exists.
+        // One active review per PR. Insert new as superseded first so the FK
+        // and check (superseded must have supersededById) hold, then swap.
         await tx.insert(reviewRecords).values({
           ...values,
           status: "superseded",
@@ -134,9 +147,9 @@ export function createReviewRecordStore(
         .orderBy(desc(reviewRecords.createdAt));
     },
 
-    claimPendingNotifications() {
+    claimForDelivery() {
       const now = new Date();
-      const expiredBefore = new Date(now.getTime() - notificationLeaseMs);
+      const leaseExpiredBefore = new Date(now.getTime() - notificationLeaseMs);
 
       return db.transaction(async (tx) => {
         const candidates = await tx
@@ -149,7 +162,7 @@ export function createReviewRecordStore(
                 eq(reviewRecords.notificationStatus, "delivering"),
                 or(
                   isNull(reviewRecords.notificationClaimedAt),
-                  lt(reviewRecords.notificationClaimedAt, expiredBefore),
+                  lt(reviewRecords.notificationClaimedAt, leaseExpiredBefore),
                 ),
               ),
             ),
@@ -159,10 +172,10 @@ export function createReviewRecordStore(
           .for("update", { skipLocked: true });
         if (candidates.length === 0) return [];
 
-        const pendingIds = candidates
+        const firstIds = candidates
           .filter(({ notificationStatus }) => notificationStatus === "pending")
           .map(({ id }) => id);
-        if (pendingIds.length > 0) {
+        if (firstIds.length > 0) {
           await tx
             .update(reviewRecords)
             .set({
@@ -170,7 +183,7 @@ export function createReviewRecordStore(
               notificationAttemptedAt: now,
               notificationClaimedAt: now,
             })
-            .where(inArray(reviewRecords.id, pendingIds));
+            .where(inArray(reviewRecords.id, firstIds));
         }
 
         const retryIds = candidates
@@ -183,19 +196,11 @@ export function createReviewRecordStore(
             .where(inArray(reviewRecords.id, retryIds));
         }
 
-        return candidates.map((record) => ({
-          record: {
-            ...record,
-            notificationStatus: "delivering" as const,
-            notificationAttemptedAt: record.notificationAttemptedAt ?? now,
-            notificationClaimedAt: now,
-          },
-          retry: record.notificationStatus === "delivering",
-        }));
+        return candidates.map((row) => toClaim(row, now));
       });
     },
 
-    async markNotificationDelivered(id, claimedAt, delivery) {
+    async markDelivered(id, claimedAt, delivery) {
       const updated = await db
         .update(reviewRecords)
         .set({
@@ -215,7 +220,7 @@ export function createReviewRecordStore(
       return updated.length === 1;
     },
 
-    async releaseNotification(id, claimedAt) {
+    async releaseClaim(id, claimedAt) {
       await db
         .update(reviewRecords)
         .set({
@@ -236,11 +241,25 @@ export function createReviewRecordStore(
   };
 }
 
-let sharedStore: ReviewRecordStore | undefined;
+let sharedDao: ReviewRecordDao | undefined;
 
-export function getReviewRecordStore(): ReviewRecordStore {
-  sharedStore ??= createReviewRecordStore();
-  return sharedStore;
+export function getReviewRecordDao(): ReviewRecordDao {
+  sharedDao ??= createReviewRecordDao();
+  return sharedDao;
+}
+
+/** pending → first. Already delivering (lease expired) → uncertain_retry. */
+function toClaim(row: ReviewRecord, now: Date): NotificationClaim {
+  const attempt = row.notificationStatus === "delivering" ? "uncertain_retry" : "first";
+  return {
+    attempt,
+    record: {
+      ...row,
+      notificationStatus: "delivering",
+      notificationAttemptedAt: row.notificationAttemptedAt ?? now,
+      notificationClaimedAt: now,
+    },
+  };
 }
 
 function requiredDatabaseUrl(): string {

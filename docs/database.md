@@ -50,7 +50,7 @@ The ReviewRecord edge eval starts the local database, applies the checked-in
 migrations, and builds a temporary fixture agent from `agent/lib`. It
 overlays the mock model and fake GitHub and Slack credentials. It drives a
 signed GitHub `pull_request.opened` webhook through eve, reads the resulting
-row through the store, and asserts the immediate Slack Web API call against a
+row through the DAO, and asserts the immediate Slack Web API call against a
 local HTTP stub on port 43120:
 
 ```bash

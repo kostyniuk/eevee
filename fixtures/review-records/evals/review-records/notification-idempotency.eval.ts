@@ -2,11 +2,12 @@ import { defineEval } from "eve/evals";
 import { equals, includes, satisfies } from "eve/evals/expect";
 
 import {
-  createSlackReviewNotificationClient,
-  deliverPendingReviewNotifications,
-  formatReviewNotification,
-} from "#lib/review-notification-delivery";
-import type { ReviewRecord, ReviewRecordStore } from "#lib/review-record-store";
+  createSlackNotificationApi,
+  deliverPendingNotifications,
+  formatSlackNotification,
+} from "#lib/review-notification-service";
+import type { ReviewRecord, ReviewRecordDao } from "#lib/review-record-dao";
+import { reviewerInstructions } from "#lib/reviewer-instructions";
 
 const record: ReviewRecord = {
   id: "18fce0f7-9c2b-4542-8bb8-93a8a849e24a",
@@ -50,16 +51,16 @@ export default defineEval({
     let historyReads = 0;
     let posts = 0;
     const messages: Array<Record<string, unknown>> = [];
-    const store: ReviewRecordStore = {
+    const dao: ReviewRecordDao = {
       create: async () => record,
       listForPullRequest: async () => [],
-      claimPendingNotifications: async () => {
+      claimForDelivery: async () => {
         if (delivered) return [];
-        const retry = claims > 0;
+        const attempt = claims === 0 ? "first" : "uncertain_retry";
         claims += 1;
-        return [{ record, retry }];
+        return [{ record, attempt }];
       },
-      async markNotificationDelivered() {
+      async markDelivered() {
         if (failMark) {
           failMark = false;
           throw new Error("Injected database acknowledgment failure.");
@@ -67,47 +68,44 @@ export default defineEval({
         delivered = true;
         return true;
       },
-      releaseNotification: async () => {},
+      releaseClaim: async () => {},
       close: async () => {},
     };
-    const client = createSlackReviewNotificationClient(
-      "fixture-token",
-      async ({ operation, body }) => {
-        const input = body as Record<string, unknown>;
-        if (operation === "conversations.history") {
-          historyReads += 1;
-          return { ok: true, messages, response_metadata: { next_cursor: "" } };
-        }
+    const slack = createSlackNotificationApi("fixture-token", async ({ operation, body }) => {
+      const input = body as Record<string, unknown>;
+      if (operation === "conversations.history") {
+        historyReads += 1;
+        return { ok: true, messages, response_metadata: { next_cursor: "" } };
+      }
 
-        posts += 1;
-        messages.push({ metadata: input.metadata, ts: "1712345678.000100" });
-        return { ok: true, channel: input.channel, ts: "1712345678.000100" };
-      },
-    );
+      posts += 1;
+      messages.push({ metadata: input.metadata, ts: "1712345678.000100" });
+      return { ok: true, channel: input.channel, ts: "1712345678.000100" };
+    });
 
-    await deliverPendingReviewNotifications({
+    await deliverPendingNotifications({
       channelId: "C_REVIEW_FIXTURE",
-      client,
-      store,
+      slack,
+      dao,
     }).catch(() => {});
-    await deliverPendingReviewNotifications({ channelId: "C_REVIEW_FIXTURE", client, store });
+    await deliverPendingNotifications({ channelId: "C_REVIEW_FIXTURE", slack, dao });
 
     t.check(posts, equals(1));
     t.check(historyReads, equals(1));
 
-    const staleStore: ReviewRecordStore = {
-      ...store,
-      claimPendingNotifications: async () => [{ record, retry: true }],
-      async markNotificationDelivered() {
+    const staleDao: ReviewRecordDao = {
+      ...dao,
+      claimForDelivery: async () => [{ record, attempt: "uncertain_retry" }],
+      async markDelivered() {
         return false;
       },
     };
     let staleError = "";
     try {
-      await deliverPendingReviewNotifications({
+      await deliverPendingNotifications({
         channelId: "C_REVIEW_FIXTURE",
-        client,
-        store: staleStore,
+        slack,
+        dao: staleDao,
       });
     } catch (error) {
       staleError = error instanceof Error ? error.message : String(error);
@@ -115,9 +113,9 @@ export default defineEval({
     t.check(staleError, includes("claim expired"));
 
     t.check(
-      formatReviewNotification({
+      formatSlackNotification({
         ...record,
-        safetyRating: 3,
+        safetyRating: reviewerInstructions.findingThreshold,
         findings: [
           {
             id: "e6ac22bb-e07d-43ea-bccf-a7f77cc2644c",

@@ -1,6 +1,12 @@
 import { connectSlackCredentials } from "@vercel/connect/eve";
 import { slackChannel } from "eve/channels/slack";
 
+// Slack *chat* channel (DMs / mentions / subscribed threads). This is a
+// conversation, not the review-notification hop.
+//
+// turnPolicy is unset → eve default "steer": a second ACCEPTED @mention
+// cancels the in-flight turn and answers the latest message. Returning null
+// drops the event first, so it never steers.
 export default slackChannel({
   credentials: connectSlackCredentials("slack/eevee"),
   async onMessage(ctx, message) {

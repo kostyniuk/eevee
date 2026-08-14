@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage } from "node:http";
 import type { EveEvalContext } from "eve/evals";
 import { equals, satisfies } from "eve/evals/expect";
 
+// Fake GitHub HTTP API for edge evals. Eve posts the formal review here;
+// we capture POST /pulls/7/reviews and assert event=COMMENT + commit_id.
 const apiPort = 43_119;
 const webhookSecret = "eevee-eval-secret";
 

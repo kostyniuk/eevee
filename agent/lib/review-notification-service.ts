@@ -1,11 +1,7 @@
 import { callSlackApi, type SlackBotToken } from "eve/channels/slack";
 
 import { escapeMarkup } from "./escape-markup";
-import type {
-  ReviewNotificationClaim,
-  ReviewRecord,
-  ReviewRecordStore,
-} from "./review-record-store";
+import type { NotificationClaim, ReviewRecord, ReviewRecordDao } from "./review-record-dao";
 import { reviewerInstructions } from "./reviewer-instructions";
 
 const notificationEventType = "review_notification";
@@ -25,8 +21,8 @@ export type SlackApiCall = (input: {
   readonly body: unknown;
 }) => Promise<SlackResponse>;
 
-export type ReviewNotificationClient = {
-  find(input: {
+export type SlackNotificationApi = {
+  findPosted(input: {
     readonly attemptedAt: Date;
     readonly channelId: string;
     readonly reviewRecordId: string;
@@ -43,20 +39,67 @@ type PostedMessage = {
   readonly messageTs: string;
 };
 
-type Delivery = {
+type DeliverPendingInput = {
   readonly channelId: string;
-  readonly client: ReviewNotificationClient;
-  readonly store: ReviewRecordStore;
+  readonly slack: SlackNotificationApi;
+  readonly dao: ReviewRecordDao;
 };
 
-// Slack and Postgres cannot commit together. Message metadata lets a retry find
-// a post that succeeded before the process lost its database acknowledgment.
-export function createSlackReviewNotificationClient(
+/**
+ * Slack notification service (Web API hop, not a Slack agent turn).
+ *
+ * Slack and Postgres cannot commit together. We stamp `review_record_id` on
+ * the Slack message. On `uncertain_retry` we look that id up before posting.
+ */
+export async function deliverPendingNotifications(input: DeliverPendingInput): Promise<number> {
+  const claims = await input.dao.claimForDelivery();
+  let delivered = 0;
+  let failure: unknown;
+
+  for (const claim of claims) {
+    try {
+      if (await deliverOne(claim, input)) delivered += 1;
+    } catch (error) {
+      failure ??= error;
+    }
+  }
+
+  if (failure) throw failure;
+  return delivered;
+}
+
+export function formatSlackNotification(record: ReviewRecord): string {
+  const pullRequestUrl = `https://github.com/${record.repository}/pull/${record.pullRequestNumber}`;
+  const reference = `${record.repository}#${record.pullRequestNumber}`;
+  const summary = collapseWhitespace(record.summary);
+  const verdict = collapseWhitespace(record.verdict);
+  const lines = [
+    `:shield: *Safety Rating: ${record.safetyRating}/5* · <${pullRequestUrl}|${escapeMarkup(reference)}>`,
+    "",
+    `:memo: *Summary:* ${escapeMarkup(summary)}`,
+    "",
+    `:scales: *Verdict:* ${escapeMarkup(verdict)}`,
+  ];
+
+  const topFinding =
+    record.safetyRating < reviewerInstructions.findingThreshold ? record.findings[0] : undefined;
+  if (topFinding) {
+    lines.push(
+      "",
+      `:pushpin: *Top finding — ${escapeMarkup(topFinding.title)}*`,
+      escapeMarkup(topFinding.body),
+    );
+  }
+
+  return lines.join("\n");
+}
+
+export function createSlackNotificationApi(
   botToken: SlackBotToken | undefined,
   request: SlackApiCall = callSlackApi,
-): ReviewNotificationClient {
+): SlackNotificationApi {
   return {
-    async find({ attemptedAt, channelId, reviewRecordId }) {
+    async findPosted({ attemptedAt, channelId, reviewRecordId }) {
       let cursor: string | undefined;
 
       do {
@@ -107,91 +150,47 @@ export function createSlackReviewNotificationClient(
   };
 }
 
-export async function deliverPendingReviewNotifications(options: Delivery): Promise<number> {
-  const claims = await options.store.claimPendingNotifications();
-  let delivered = 0;
-  let failure: unknown;
-
-  for (const claim of claims) {
-    try {
-      if (await deliverReviewNotification(claim, options)) delivered += 1;
-    } catch (error) {
-      failure ??= error;
-    }
-  }
-
-  if (failure) throw failure;
-  return delivered;
-}
-
-export function formatReviewNotification(record: ReviewRecord): string {
-  const pullRequestUrl = `https://github.com/${record.repository}/pull/${record.pullRequestNumber}`;
-  const reference = `${record.repository}#${record.pullRequestNumber}`;
-  const summary = collapseWhitespace(record.summary);
-  const verdict = collapseWhitespace(record.verdict);
-  const lines = [
-    `:shield: *Safety Rating: ${record.safetyRating}/5* · <${pullRequestUrl}|${escapeMarkup(reference)}>`,
-    "",
-    `:memo: *Summary:* ${escapeMarkup(summary)}`,
-    "",
-    `:scales: *Verdict:* ${escapeMarkup(verdict)}`,
-  ];
-
-  const topFinding =
-    record.safetyRating < reviewerInstructions.findingThreshold ? record.findings[0] : undefined;
-  if (topFinding) {
-    lines.push(
-      "",
-      `:pushpin: *Top finding — ${escapeMarkup(topFinding.title)}*`,
-      escapeMarkup(topFinding.body),
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function collapseWhitespace(text: string): string {
-  return text.replace(/\s+/gu, " ").trim();
-}
-
-async function deliverReviewNotification(
-  claim: ReviewNotificationClaim,
-  options: Delivery,
-): Promise<boolean> {
+async function deliverOne(claim: NotificationClaim, input: DeliverPendingInput): Promise<boolean> {
   const { record } = claim;
   const claimedAt = requiredDate(record.notificationClaimedAt, "claim");
-  let posted = claim.retry
-    ? await options.client.find({
-        attemptedAt: requiredDate(record.notificationAttemptedAt, "first attempt"),
-        channelId: options.channelId,
-        reviewRecordId: record.id,
-      })
-    : null;
 
-  if (!posted) {
-    const response = await options.client.post({
-      channelId: options.channelId,
-      reviewRecordId: record.id,
-      text: formatReviewNotification(record),
-    });
-    if (!response.ok) {
-      await options.store.releaseNotification(record.id, claimedAt);
-      throw new Error(
-        `Slack chat.postMessage failed: ${String(response.error ?? "unknown error")}`,
-      );
-    }
+  const alreadyOnSlack =
+    claim.attempt === "uncertain_retry"
+      ? await input.slack.findPosted({
+          attemptedAt: requiredDate(record.notificationAttemptedAt, "first attempt"),
+          channelId: input.channelId,
+          reviewRecordId: record.id,
+        })
+      : null;
 
-    const messageTs = typeof response.ts === "string" ? response.ts : null;
-    if (!messageTs) throw new Error("Slack chat.postMessage returned no message timestamp.");
-    posted = {
-      channelId: typeof response.channel === "string" ? response.channel : options.channelId,
-      messageTs,
-    };
-  }
+  const posted = alreadyOnSlack ?? (await postNew(claim, claimedAt, input));
 
-  const marked = await options.store.markNotificationDelivered(record.id, claimedAt, posted);
+  const marked = await input.dao.markDelivered(record.id, claimedAt, posted);
   if (!marked) throw new Error("Review notification claim expired before delivery was recorded.");
   return true;
+}
+
+async function postNew(
+  claim: NotificationClaim,
+  claimedAt: Date,
+  input: DeliverPendingInput,
+): Promise<PostedMessage> {
+  const response = await input.slack.post({
+    channelId: input.channelId,
+    reviewRecordId: claim.record.id,
+    text: formatSlackNotification(claim.record),
+  });
+  if (!response.ok) {
+    await input.dao.releaseClaim(claim.record.id, claimedAt);
+    throw new Error(`Slack chat.postMessage failed: ${String(response.error ?? "unknown error")}`);
+  }
+
+  const messageTs = typeof response.ts === "string" ? response.ts : null;
+  if (!messageTs) throw new Error("Slack chat.postMessage returned no message timestamp.");
+  return {
+    channelId: typeof response.channel === "string" ? response.channel : input.channelId,
+    messageTs,
+  };
 }
 
 function findMessageTs(messages: unknown, reviewRecordId: string): string | null {
@@ -216,6 +215,10 @@ function findMessageTs(messages: unknown, reviewRecordId: string): string | null
   }
 
   return null;
+}
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
 }
 
 function requiredDate(value: Date | null, name: string): Date {

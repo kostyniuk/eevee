@@ -49,6 +49,7 @@ export const reviewRecords = pgTable(
   "review_records",
   {
     id: uuid().primaryKey(),
+    // eve sessionId:turnId — unique so a retried turn cannot insert twice.
     sourceTurnId: text("source_turn_id").notNull(),
     repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
     repository: text().notNull(),
@@ -64,11 +65,20 @@ export const reviewRecords = pgTable(
     findings: jsonb().$type<readonly StoredFinding[]>().notNull(),
     status: reviewStatus().notNull().default("active"),
     supersededById: uuid("superseded_by_id").references((): AnyPgColumn => reviewRecords.id),
+    // pending → delivering (claimed, 5m lease) → delivered (has Slack ts).
     notificationStatus: reviewNotificationStatus("notification_status")
       .notNull()
       .default("pending"),
+    // First time we started delivering this row. Set once on the first claim;
+    // not refreshed on uncertain_retry. Slack history search starts here − 60s.
+    // Cleared if Slack fails and we release back to pending.
     notificationAttemptedAt: timestamp("notification_attempted_at", { withTimezone: true }),
+    // When this worker took the 5-minute lease. Refreshed on every claim,
+    // including uncertain_retry. markDelivered / releaseClaim only succeed if
+    // this still matches — otherwise another worker owns the row.
     notificationClaimedAt: timestamp("notification_claimed_at", { withTimezone: true }),
+    // When we recorded Slack success. Set only by markDelivered. Audit clock,
+    // not used to decide first vs retry.
     notificationDeliveredAt: timestamp("notification_delivered_at", { withTimezone: true }),
     slackChannelId: text("slack_channel_id"),
     slackMessageTs: text("slack_message_ts"),
