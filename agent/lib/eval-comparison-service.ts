@@ -310,11 +310,7 @@ async function findPublishedReview(
 ): Promise<PublishedReview | null> {
   const [owner, repo] = splitRepository(repository);
   const root = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullRequestNumber}`;
-  const reviewsResponse = await request<unknown>({
-    method: "GET",
-    path: `${root}/reviews?per_page=100`,
-  });
-  const reviews = Array.isArray(reviewsResponse.body) ? reviewsResponse.body : [];
+  const reviews = await listGitHubPages(request, `${root}/reviews`);
   const published = [...reviews].reverse().find((value) => {
     if (!isObject(value)) return false;
     return (
@@ -331,17 +327,29 @@ async function findPublishedReview(
     return null;
   }
 
-  const commentsResponse = await request<unknown>({
-    method: "GET",
-    path: `${root}/reviews/${published.id}/comments?per_page=100`,
-  });
-  const comments = (Array.isArray(commentsResponse.body) ? commentsResponse.body : []).flatMap(
-    (value) =>
-      isObject(value) && typeof value.node_id === "string" && typeof value.body === "string"
-        ? [{ nodeId: value.node_id, body: value.body }]
-        : [],
+  const comments = (
+    await listGitHubPages(request, `${root}/reviews/${published.id}/comments`)
+  ).flatMap((value) =>
+    isObject(value) && typeof value.node_id === "string" && typeof value.body === "string"
+      ? [{ nodeId: value.node_id, body: value.body }]
+      : [],
   );
   return { reviewNodeId: published.node_id, comments };
+}
+
+async function listGitHubPages(request: GitHubRequest, path: string): Promise<unknown[]> {
+  const values: unknown[] = [];
+  for (let page = 1; ; page += 1) {
+    const response = await request<unknown>({
+      method: "GET",
+      path: `${path}?per_page=100&page=${page}`,
+    });
+    if (!Array.isArray(response.body)) {
+      throw new Error(`GitHub ${path} returned a non-list response.`);
+    }
+    values.push(...response.body);
+    if (response.body.length < 100) return values;
+  }
 }
 
 async function harvestReactions(

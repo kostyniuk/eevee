@@ -229,7 +229,11 @@ async function startGitHubApiStub(): Promise<{
   const server = createServer(async (request, response) => {
     response.setHeader("content-type", "application/json");
 
-    if (request.method === "GET" && request.url?.endsWith("/reviews?per_page=100")) {
+    if (request.method === "GET" && request.url?.endsWith("/reviews?per_page=100&page=1")) {
+      response.end(JSON.stringify(Array.from({ length: 100 }, () => ({}))));
+      return;
+    }
+    if (request.method === "GET" && request.url?.endsWith("/reviews?per_page=100&page=2")) {
       response.end(
         JSON.stringify([
           {
@@ -242,7 +246,17 @@ async function startGitHubApiStub(): Promise<{
       );
       return;
     }
-    if (request.method === "GET" && request.url?.endsWith("/reviews/77/comments?per_page=100")) {
+    if (
+      request.method === "GET" &&
+      request.url?.endsWith("/reviews/77/comments?per_page=100&page=1")
+    ) {
+      response.end(JSON.stringify(Array.from({ length: 100 }, () => ({}))));
+      return;
+    }
+    if (
+      request.method === "GET" &&
+      request.url?.endsWith("/reviews/77/comments?per_page=100&page=2")
+    ) {
       response.end(
         JSON.stringify([
           {
