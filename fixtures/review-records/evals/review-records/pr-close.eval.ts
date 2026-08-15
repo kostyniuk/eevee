@@ -299,6 +299,43 @@ export default defineEval({
       await waitForClose(t, dao, ambiguousNumber, ambiguous.id);
       t.check((await dao.listEvalPairs(ambiguous.id)).length, equals(0));
       t.check(slack.evalMessages().length, equals(2));
+
+      // A record written before reviews looked the base up on GitHub. The
+      // closed webhook carries one, so the pair is still built.
+      const baselessNumber = pullRequestNumber + 5;
+      const baseless = await dao.create({
+        sourceTurnId: `baseless-eval:${randomBytes(12).toString("hex")}`,
+        repositoryId,
+        repository: "kostyniuk/fixture",
+        pullRequestNumber: baselessNumber,
+        baseCommitSha: null,
+        reviewedCommitSha: reviewedSha,
+        instructions: reviewerInstructions,
+        review: {
+          safetyRating: 2,
+          summary: "The record predates the base-SHA lookup.",
+          verdict: "The comparison base comes from the close webhook.",
+          criteria: record.criteria,
+          findings: [
+            {
+              path: "agent/example.ts",
+              line: 12,
+              side: "RIGHT",
+              title: "Handle the empty input",
+              body: "The empty-input path returns the wrong value.",
+            },
+          ],
+        },
+      });
+      const baselessResponse = await sendClosedWebhook(t, baselessNumber, mergedSha);
+      t.check(baselessResponse.status, equals(200));
+      await waitForClose(t, dao, baselessNumber, baseless.id);
+      const baselessPairs = await dao.listEvalPairs(baseless.id);
+      t.check(baselessPairs.length, equals(1));
+      t.check(baselessPairs[0]?.beforeDiff.baseSha, equals(baseSha));
+      t.check(baselessPairs[0]?.afterDiff.baseSha, equals(baseSha));
+      t.check(baselessPairs[0]?.deliveryStatus, equals("delivered"));
+      t.check(slack.evalMessages().length, equals(3));
     } finally {
       await dao.close();
       await slack.close();

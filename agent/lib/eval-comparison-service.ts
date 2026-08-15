@@ -38,6 +38,7 @@ export async function processClosedPullRequest(input: {
   readonly repository: string;
   readonly pullRequestNumber: number;
   readonly finalHeadSha: string | null;
+  readonly finalBaseSha: string | null;
   readonly merged: boolean;
   readonly evalChannelId: string;
   readonly github: { request: GitHubRequest };
@@ -59,18 +60,27 @@ export async function processClosedPullRequest(input: {
       await input.dao.addGitHubReactionFeedback(claim.record.id, reactions);
     }
 
-    if (
-      input.merged &&
-      claim.record.baseCommitSha &&
-      input.finalHeadSha &&
-      input.finalHeadSha !== claim.record.reviewedCommitSha
-    ) {
+    // A merged PR whose head moved past the reviewed commit is the Eval case:
+    // the code as reviewed on one side, the code as merged on the other.
+    const mergedHeadSha =
+      input.merged && input.finalHeadSha !== claim.record.reviewedCommitSha
+        ? input.finalHeadSha
+        : null;
+    // Records written before the review-time base lookup have no base of their
+    // own; the closed webhook carries one, so prefer the record and fall back.
+    const baseSha = claim.record.baseCommitSha ?? input.finalBaseSha;
+    if (mergedHeadSha && !baseSha) {
+      throw new Error(
+        `Cannot build an Eval comparison for ${input.repository}#${input.pullRequestNumber}: neither ReviewRecord ${claim.record.id} nor the close webhook carries a base commit SHA.`,
+      );
+    }
+    if (mergedHeadSha && baseSha) {
       const comparison = await buildFindingFocusedComparison({
         request: input.github.request,
         repository: input.repository,
-        baseSha: claim.record.baseCommitSha,
+        baseSha,
         reviewedSha: claim.record.reviewedCommitSha,
-        finalSha: input.finalHeadSha,
+        finalSha: mergedHeadSha,
         findings: claim.record.findings,
       });
       if (comparison) {
@@ -78,13 +88,13 @@ export async function processClosedPullRequest(input: {
           reviewRecordId: claim.record.id,
           beforeDiff: {
             repository: input.repository,
-            baseSha: claim.record.baseCommitSha,
+            baseSha,
             headSha: claim.record.reviewedCommitSha,
           },
           afterDiff: {
             repository: input.repository,
-            baseSha: claim.record.baseCommitSha,
-            headSha: input.finalHeadSha,
+            baseSha,
+            headSha: mergedHeadSha,
           },
           evidence: comparison,
           shuffleOrder: randomInt(2) === 0 ? "before_first" : "after_first",
