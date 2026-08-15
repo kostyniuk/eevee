@@ -9,6 +9,7 @@ import type {
   ReviewRecord,
   ReviewRecordDao,
 } from "./review-record-dao";
+import { buildFindingFocusedComparison } from "./finding-focused-diff";
 
 const evalPairEventType = "eval_comparison";
 const formalReviewMarker = "<!-- evee:formal-review -->";
@@ -64,27 +65,37 @@ export async function processClosedPullRequest(input: {
       input.finalHeadSha &&
       input.finalHeadSha !== claim.record.reviewedCommitSha
     ) {
-      const pair = await input.dao.createEvalPair({
-        reviewRecordId: claim.record.id,
-        beforeDiff: {
-          repository: input.repository,
-          baseSha: claim.record.baseCommitSha,
-          headSha: claim.record.reviewedCommitSha,
-        },
-        afterDiff: {
-          repository: input.repository,
-          baseSha: claim.record.baseCommitSha,
-          headSha: input.finalHeadSha,
-        },
-        shuffleOrder: randomInt(2) === 0 ? "before_first" : "after_first",
+      const comparison = await buildFindingFocusedComparison({
+        request: input.github.request,
+        repository: input.repository,
+        baseSha: claim.record.baseCommitSha,
+        reviewedSha: claim.record.reviewedCommitSha,
+        finalSha: input.finalHeadSha,
+        findings: claim.record.findings,
       });
-      await deliverEvalPair({
-        pair,
-        channelId: input.evalChannelId,
-        github: input.github.request,
-        slack: input.slack,
-        dao: input.dao,
-      });
+      if (comparison) {
+        const pair = await input.dao.createEvalPair({
+          reviewRecordId: claim.record.id,
+          beforeDiff: {
+            repository: input.repository,
+            baseSha: claim.record.baseCommitSha,
+            headSha: claim.record.reviewedCommitSha,
+          },
+          afterDiff: {
+            repository: input.repository,
+            baseSha: claim.record.baseCommitSha,
+            headSha: input.finalHeadSha,
+          },
+          shuffleOrder: randomInt(2) === 0 ? "before_first" : "after_first",
+        });
+        await deliverEvalPair({
+          pair,
+          channelId: input.evalChannelId,
+          slack: input.slack,
+          dao: input.dao,
+          comparison,
+        });
+      }
     }
 
     const completed = await input.dao.completeCloseProcessing(claim.record.id, claim.claimedAt);
@@ -191,9 +202,9 @@ function displayedToIdentity(choice: "a" | "b", pair: EvalPair): "before" | "aft
 async function deliverEvalPair(input: {
   readonly pair: EvalPair;
   readonly channelId: string;
-  readonly github: GitHubRequest;
   readonly slack: EvalComparisonSlackApi;
   readonly dao: ReviewRecordDao;
+  readonly comparison: { readonly before: string; readonly after: string };
 }) {
   const claim = await input.dao.claimEvalPairDelivery(input.pair.id);
   if (!claim) {
@@ -214,11 +225,11 @@ async function deliverEvalPair(input: {
 
   let posted = alreadyPosted;
   if (!posted) {
-    const [before, after] = await Promise.all([
-      renderDiff(input.github, claim.pair.beforeDiff),
-      renderDiff(input.github, claim.pair.afterDiff),
-    ]);
-    const blocks = formatEvalPairBlocks(claim.pair, before, after);
+    const blocks = formatEvalPairBlocks(
+      claim.pair,
+      input.comparison.before,
+      input.comparison.after,
+    );
     const response = await input.slack.post({
       channelId: input.channelId,
       pairId: claim.pair.id,
@@ -280,21 +291,6 @@ function formatEvalPairBlocks(pair: EvalPair, before: string, after: string): re
       ],
     },
   ];
-}
-
-async function renderDiff(request: GitHubRequest, ref: EvalPair["beforeDiff"]): Promise<string> {
-  const [owner, repo] = splitRepository(ref.repository);
-  const response = await request<{ readonly files?: readonly unknown[] }>({
-    method: "GET",
-    path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${ref.baseSha}...${ref.headSha}`,
-  });
-  const files = Array.isArray(response.body?.files) ? response.body.files : [];
-  const rendered = files.flatMap((file) => {
-    if (!isObject(file) || typeof file.filename !== "string") return [];
-    const patch = typeof file.patch === "string" ? file.patch : "(binary or patch unavailable)";
-    return [`--- ${file.filename}\n${patch}`];
-  });
-  return truncate(rendered.join("\n\n") || "(no textual diff)", 2_400);
 }
 
 type PublishedReview = {
@@ -468,10 +464,6 @@ function splitRepository(repository: string): readonly [string, string] {
 
 function safeFence(value: string): string {
   return value.replaceAll("```", "`\u200b``");
-}
-
-function truncate(value: string, maximum: number): string {
-  return value.length <= maximum ? value : `${value.slice(0, maximum - 16)}\n… [truncated]`;
 }
 
 function assertSlackOk(response: EvalSlackResponse, operation: string): void {
