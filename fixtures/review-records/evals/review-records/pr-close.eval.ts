@@ -14,6 +14,8 @@ const pullRequestNumber = randomInt(10_000, 1_000_000);
 const baseSha = "3".repeat(40);
 const reviewedSha = "4".repeat(40);
 const mergedSha = randomBytes(20).toString("hex");
+const revertedSha = randomBytes(20).toString("hex");
+const ambiguousSha = randomBytes(20).toString("hex");
 
 export default defineEval({
   description: "Closing a reviewed PR harvests reactions and posts one blind eval pair.",
@@ -51,6 +53,13 @@ export default defineEval({
               title: "Handle the empty input",
               body: "The empty-input path returns the wrong value.",
             },
+            {
+              path: "agent/other.ts",
+              line: 5,
+              side: "RIGHT",
+              title: "Preserve the fallback",
+              body: "This branch drops the required fallback.",
+            },
           ],
         },
       });
@@ -62,13 +71,19 @@ export default defineEval({
 
       await waitForClose(t, dao, pullRequestNumber, record.id);
       const feedback = await dao.listFeedback(record.id);
-      t.check(feedback.length, equals(3));
+      t.check(feedback.length, equals(4));
       t.check(
         feedback
           .map(({ value }) => value)
           .sort()
           .join(","),
-        equals("down,up,up"),
+        equals("down,down,up,up"),
+      );
+      t.check(
+        feedback.find(
+          ({ externalId }) => externalId === `github-reaction:R_OTHER_${pullRequestNumber}`,
+        )?.findingId,
+        equals(record.findings[1]?.id),
       );
       t.check(
         feedback.find(
@@ -89,7 +104,7 @@ export default defineEval({
       t.check(pair.beforeDiff.headSha, equals(reviewedSha));
       t.check(pair.afterDiff.headSha, equals(mergedSha));
       t.check(pair.deliveryStatus, equals("delivered"));
-      t.check(github.graphqlCalls(), equals(3));
+      t.check(github.graphqlCalls(), equals(4));
 
       const message = slack.evalMessages()[0];
       t.check(slack.evalMessages().length, equals(1));
@@ -97,6 +112,20 @@ export default defineEval({
       t.check(message?.metadata, includes(`"eval_pair_id":"${pair.id}"`));
       t.check(message?.blocks, includes("Side A"));
       t.check(message?.blocks, includes("Side B"));
+      t.check(message?.blocks, includes("bad-empty-result"));
+      t.check(message?.blocks, includes("fixed-empty-result"));
+      t.check(message?.blocks, includes("bad-fallback"));
+      t.check(message?.blocks, includes("fixed-fallback"));
+      t.check(
+        message?.blocks,
+        satisfies(
+          (blocks) =>
+            typeof blocks === "string" &&
+            !blocks.includes("unrelated-late-change") &&
+            !blocks.includes("unrelated-file-change"),
+          "only finding-related hunks are shown",
+        ),
+      );
       t.check(
         message?.blocks,
         satisfies(
@@ -159,6 +188,106 @@ export default defineEval({
       await waitForClose(t, dao, unchangedNumber, unchanged.id);
       t.check((await dao.listEvalPairs(unchanged.id)).length, equals(0));
       t.check(slack.evalMessages().length, equals(1));
+
+      const unmappableNumber = pullRequestNumber + 2;
+      const unmappable = await dao.create({
+        sourceTurnId: `unmappable-eval:${randomBytes(12).toString("hex")}`,
+        repositoryId,
+        repository: "kostyniuk/fixture",
+        pullRequestNumber: unmappableNumber,
+        baseCommitSha: baseSha,
+        reviewedCommitSha: reviewedSha,
+        instructions: reviewerInstructions,
+        review: {
+          safetyRating: 2,
+          summary: "The finding cannot be located.",
+          verdict: "Do not publish a partial comparison.",
+          criteria: record.criteria,
+          findings: [
+            {
+              path: "agent/missing.ts",
+              line: 9,
+              side: "RIGHT",
+              title: "Missing patch",
+              body: "This finding has no corresponding GitHub patch.",
+            },
+          ],
+        },
+      });
+      const unmappableResponse = await sendClosedWebhook(t, unmappableNumber, mergedSha);
+      t.check(unmappableResponse.status, equals(200));
+      await waitForClose(t, dao, unmappableNumber, unmappable.id);
+      t.check((await dao.listEvalPairs(unmappable.id)).length, equals(0));
+      t.check(slack.evalMessages().length, equals(1));
+
+      const sourceFallbackNumber = pullRequestNumber + 3;
+      const sourceFallback = await dao.create({
+        sourceTurnId: `source-fallback-eval:${randomBytes(12).toString("hex")}`,
+        repositoryId,
+        repository: "kostyniuk/fixture",
+        pullRequestNumber: sourceFallbackNumber,
+        baseCommitSha: baseSha,
+        reviewedCommitSha: reviewedSha,
+        instructions: reviewerInstructions,
+        review: {
+          safetyRating: 2,
+          summary: "A context-line finding was reviewed.",
+          verdict: "The final diff no longer contains its anchor.",
+          criteria: record.criteria,
+          findings: [
+            {
+              path: "agent/example.ts",
+              line: 10,
+              side: "RIGHT",
+              title: "Keep the marker aligned",
+              body: "The finding is anchored to a changed hunk's context line.",
+            },
+          ],
+        },
+      });
+      const sourceFallbackResponse = await sendClosedWebhook(t, sourceFallbackNumber, revertedSha);
+      t.check(sourceFallbackResponse.status, equals(200));
+      await waitForClose(t, dao, sourceFallbackNumber, sourceFallback.id);
+      const sourcePairs = await dao.listEvalPairs(sourceFallback.id);
+      t.check(sourcePairs.length, equals(1));
+      const sourceMessage = slack
+        .evalMessages()
+        .find(({ metadata }) => metadata?.includes(sourcePairs[0]!.id));
+      t.check(sourceMessage?.blocks, includes("@@ lines"));
+      t.check(sourceMessage?.blocks, includes("const marker = true;"));
+      t.check(sourceMessage?.blocks, includes("· 1/"));
+      t.check(slack.evalMessages().length, equals(2));
+
+      const ambiguousNumber = pullRequestNumber + 4;
+      const ambiguous = await dao.create({
+        sourceTurnId: `ambiguous-eval:${randomBytes(12).toString("hex")}`,
+        repositoryId,
+        repository: "kostyniuk/fixture",
+        pullRequestNumber: ambiguousNumber,
+        baseCommitSha: baseSha,
+        reviewedCommitSha: reviewedSha,
+        instructions: reviewerInstructions,
+        review: {
+          safetyRating: 2,
+          summary: "The finding was part of a multiline rewrite.",
+          verdict: "Its final line cannot be mapped safely.",
+          criteria: record.criteria,
+          findings: [
+            {
+              path: "agent/example.ts",
+              line: 12,
+              side: "RIGHT",
+              title: "Ambiguous replacement",
+              body: "One reviewed line became two final lines.",
+            },
+          ],
+        },
+      });
+      const ambiguousResponse = await sendClosedWebhook(t, ambiguousNumber, ambiguousSha);
+      t.check(ambiguousResponse.status, equals(200));
+      await waitForClose(t, dao, ambiguousNumber, ambiguous.id);
+      t.check((await dao.listEvalPairs(ambiguous.id)).length, equals(0));
+      t.check(slack.evalMessages().length, equals(2));
     } finally {
       await dao.close();
       await slack.close();
@@ -270,6 +399,10 @@ async function startGitHubApiStub(): Promise<{
             body: "**Handle the empty input**\n\nThe empty-input path returns the wrong value.",
           },
           {
+            node_id: "PRRC_OTHER",
+            body: "**Preserve the fallback**\n\nThis branch drops the required fallback.",
+          },
+          {
             node_id: "PRRC_UNMATCHED",
             body: "A human-authored comment that is not a stored finding.",
           },
@@ -281,6 +414,7 @@ async function startGitHubApiStub(): Promise<{
       graphqlCalls += 1;
       const body = JSON.parse(await readBody(request)) as { variables?: { id?: string } };
       const isFinding = body.variables?.id === "PRRC_FINDING";
+      const isOther = body.variables?.id === "PRRC_OTHER";
       const isUnmatched = body.variables?.id === "PRRC_UNMATCHED";
       response.end(
         JSON.stringify({
@@ -291,12 +425,16 @@ async function startGitHubApiStub(): Promise<{
                   {
                     id: isFinding
                       ? `R_FINDING_${pullRequestNumber}`
-                      : isUnmatched
-                        ? `R_UNMATCHED_${pullRequestNumber}`
-                        : `R_REVIEW_${pullRequestNumber}`,
-                    content: isFinding ? "THUMBS_DOWN" : "THUMBS_UP",
+                      : isOther
+                        ? `R_OTHER_${pullRequestNumber}`
+                        : isUnmatched
+                          ? `R_UNMATCHED_${pullRequestNumber}`
+                          : `R_REVIEW_${pullRequestNumber}`,
+                    content: isFinding || isOther ? "THUMBS_DOWN" : "THUMBS_UP",
                     createdAt: "2026-08-14T12:00:00Z",
-                    user: { login: isFinding ? "finding-judge" : "review-judge" },
+                    user: {
+                      login: isFinding || isOther ? "finding-judge" : "review-judge",
+                    },
                   },
                 ],
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -307,17 +445,37 @@ async function startGitHubApiStub(): Promise<{
       );
       return;
     }
-    if (request.method === "GET" && request.url?.includes("/compare/")) {
+    if (
+      request.method === "GET" &&
+      request.url?.includes("/contents/agent/example.ts") &&
+      request.url.includes(revertedSha)
+    ) {
+      const source = [
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        `const padding = "${"x".repeat(2_800)}";`,
+        "nine",
+        "const marker = true;",
+        "const value = input.value;",
+        "return null;",
+        "export { value };",
+      ].join("\n");
       response.end(
         JSON.stringify({
-          files: [
-            {
-              filename: "agent/example.ts",
-              patch: request.url.includes(mergedSha) ? "+after-close-fix" : "+as-reviewed",
-            },
-          ],
+          type: "file",
+          encoding: "base64",
+          content: Buffer.from(source).toString("base64"),
         }),
       );
+      return;
+    }
+    if (request.method === "GET" && request.url?.includes("/compare/")) {
+      response.end(JSON.stringify({ files: comparisonFiles(request.url) }));
       return;
     }
 
@@ -329,6 +487,62 @@ async function startGitHubApiStub(): Promise<{
     graphqlCalls: () => graphqlCalls,
     close: () => close(server),
   };
+}
+
+function comparisonFiles(url: string): readonly unknown[] {
+  if (url.includes(`${baseSha}...${revertedSha}`)) return [];
+  if (url.includes(`${reviewedSha}...${revertedSha}`)) {
+    return [
+      {
+        filename: "agent/example.ts",
+        patch:
+          '@@ -10,4 +10,4 @@\n const marker = true;\n const value = input.value;\n-return "bad-empty-result";\n+return null;\n export { value };',
+      },
+    ];
+  }
+  if (url.includes(`${reviewedSha}...${ambiguousSha}`)) {
+    return [
+      {
+        filename: "agent/example.ts",
+        patch:
+          '@@ -10,4 +10,5 @@\n const marker = true;\n const value = input.value;\n-return "bad-empty-result";\n+const result = "fixed-empty-result";\n+return result;\n export { value };',
+      },
+    ];
+  }
+  if (url.includes(`${reviewedSha}...${mergedSha}`)) {
+    return [
+      {
+        filename: "agent/example.ts",
+        patch:
+          '@@ -10,4 +10,4 @@\n const marker = true;\n const value = input.value;\n-return "bad-empty-result";\n+return "fixed-empty-result";\n export { value };',
+      },
+      {
+        filename: "agent/other.ts",
+        patch:
+          '@@ -3,4 +3,5 @@\n+const inserted = true;\n const enabled = config.enabled;\n const value = config.value;\n-return "bad-fallback";\n+return "fixed-fallback";\n export { value };',
+      },
+    ];
+  }
+
+  const final = url.includes(`${baseSha}...${mergedSha}`);
+  return [
+    {
+      filename: "agent/example.ts",
+      patch: final
+        ? '@@ -10,4 +10,4 @@\n const marker = true;\n const value = input.value;\n-return null;\n+return "fixed-empty-result";\n export { value };\n@@ -80,3 +80,3 @@\n const late = true;\n-old-late-change\n+unrelated-late-change\n export { late };'
+        : '@@ -10,4 +10,4 @@\n const marker = true;\n const value = input.value;\n-return null;\n+return "bad-empty-result";\n export { value };\n@@ -80,3 +80,3 @@\n const late = true;\n-old-late-change\n+unrelated-late-change\n export { late };',
+    },
+    {
+      filename: "agent/other.ts",
+      patch: final
+        ? '@@ -3,4 +3,5 @@\n+const inserted = true;\n const enabled = config.enabled;\n const value = config.value;\n-return undefined;\n+return "fixed-fallback";\n export { value };'
+        : '@@ -3,4 +3,4 @@\n const enabled = config.enabled;\n const value = config.value;\n-return undefined;\n+return "bad-fallback";\n export { value };',
+    },
+    {
+      filename: "agent/unrelated.ts",
+      patch: "@@ -1 +1 @@\n-old\n+unrelated-file-change",
+    },
+  ];
 }
 
 type SlackMessage = {
