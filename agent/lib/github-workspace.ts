@@ -1,6 +1,6 @@
 export async function trustWorkspace(sandbox: SandboxRunner): Promise<void> {
   const result = await sandbox.run({
-    command: "git config --global --add safe.directory /workspace",
+    command: "git config --global --replace-all safe.directory /workspace",
   });
   if (result.exitCode === 0) return;
 

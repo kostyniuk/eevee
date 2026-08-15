@@ -199,11 +199,14 @@ function displayedToIdentity(choice: "a" | "b", pair: EvalPair): "before" | "aft
   return choice === "a" ? (aIsBefore ? "before" : "after") : aIsBefore ? "after" : "before";
 }
 
-async function deliverEvalPair(input: {
+export async function deliverEvalPair(input: {
   readonly pair: EvalPair;
   readonly channelId: string;
-  readonly slack: EvalComparisonSlackApi;
-  readonly dao: ReviewRecordDao;
+  readonly slack: Pick<EvalComparisonSlackApi, "findPosted" | "post">;
+  readonly dao: Pick<
+    ReviewRecordDao,
+    "claimEvalPairDelivery" | "getEvalPair" | "markEvalPairDelivered" | "releaseEvalPairDelivery"
+  >;
 }) {
   const claim = await input.dao.claimEvalPairDelivery(input.pair.id);
   if (!claim) {
@@ -224,7 +227,11 @@ async function deliverEvalPair(input: {
 
   let posted = alreadyPosted;
   if (!posted) {
-    const evidence = requiredEvidence(claim.pair);
+    const evidence = claim.pair.evidence;
+    if (!evidence) {
+      await input.dao.releaseEvalPairDelivery(claim.pair.id, claimedAt);
+      throw new Error("Eval pair has no stored evidence; run the evidence backfill first.");
+    }
     const sides = evidenceSides(evidence);
     const blocks = formatEvalPairBlocks(claim.pair, sides.before, sides.after);
     const response = await input.slack.post({
@@ -260,11 +267,6 @@ function evidenceSides(evidence: NonNullable<EvalPair["evidence"]>): {
     before: evidence.findings.flatMap((finding) => finding.before),
     after: evidence.findings.flatMap((finding) => finding.after),
   };
-}
-
-function requiredEvidence(pair: EvalPair): NonNullable<EvalPair["evidence"]> {
-  if (!pair.evidence) throw new Error("Eval pair has no stored evidence.");
-  return pair.evidence;
 }
 
 function formatEvalPairBlocks(
