@@ -6,5 +6,5 @@
  * collapse to a single recipient.
  */
 export function uniqueMailboxes(emails: readonly string[]): string[] {
-  return [...new Set(emails)];
+  return [...new Set(emails.map((email) => email.trim().toLowerCase()))];
 }
