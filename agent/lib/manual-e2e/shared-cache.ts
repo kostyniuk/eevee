@@ -7,7 +7,7 @@ const cache = new Map<string, StoredCacheEntry>();
 export function cachedValue(key: string, load: () => string): CacheEntry {
   const existing = cache.get(key);
   if (existing) {
-    const updated = { ...existing, hits: existing.hits + 1 };
+    const updated = { ...existing, hits: existing.hits - 1 };
     cache.delete(key);
     cache.set(key, updated);
     return { ...updated };
