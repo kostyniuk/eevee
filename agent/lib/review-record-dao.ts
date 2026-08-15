@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import type { Review } from "./review-helper";
-import { reviewRecords } from "./review-record-schema";
+import { evalPairs, evalVotes, feedback, reviewRecords } from "./review-record-schema";
 import type { ReviewerInstructions } from "./reviewer-instructions";
 
 type CreateReviewRecord = {
@@ -13,12 +13,34 @@ type CreateReviewRecord = {
   readonly repositoryId: number;
   readonly repository: string;
   readonly pullRequestNumber: number;
+  readonly baseCommitSha: string | null;
   readonly reviewedCommitSha: string;
   readonly instructions: Pick<ReviewerInstructions, "model" | "source" | "version">;
   readonly review: Review;
 };
 
 export type ReviewRecord = typeof reviewRecords.$inferSelect;
+export type EvalPair = typeof evalPairs.$inferSelect;
+export type Feedback = typeof feedback.$inferSelect;
+export type EvalVote = typeof evalVotes.$inferSelect;
+
+export type GitHubReactionFeedback = {
+  readonly externalId: string;
+  readonly findingId: string | null;
+  readonly author: string;
+  readonly value: "up" | "down";
+  readonly createdAt: Date;
+};
+
+export type CloseClaim = {
+  readonly record: ReviewRecord;
+  readonly claimedAt: Date;
+};
+
+export type EvalPairDeliveryClaim = {
+  readonly pair: EvalPair;
+  readonly attempt: "first" | "uncertain_retry";
+};
 
 /**
  * A row we locked for Slack delivery.
@@ -40,6 +62,35 @@ const notificationLeaseMs = 5 * 60 * 1_000;
 export interface ReviewRecordDao {
   create(input: CreateReviewRecord): Promise<ReviewRecord>;
   listForPullRequest(repositoryId: number, pullRequestNumber: number): Promise<ReviewRecord[]>;
+  listFeedback(reviewRecordId: string): Promise<Feedback[]>;
+  listEvalPairs(reviewRecordId: string): Promise<EvalPair[]>;
+  listEvalVotes(pairId: string): Promise<EvalVote[]>;
+  claimCloseProcessing(repositoryId: number, pullRequestNumber: number): Promise<CloseClaim | null>;
+  addGitHubReactionFeedback(
+    reviewRecordId: string,
+    reactions: readonly GitHubReactionFeedback[],
+  ): Promise<number>;
+  createEvalPair(input: {
+    readonly reviewRecordId: string;
+    readonly beforeDiff: EvalPair["beforeDiff"];
+    readonly afterDiff: EvalPair["afterDiff"];
+    readonly shuffleOrder: EvalPair["shuffleOrder"];
+  }): Promise<EvalPair>;
+  getEvalPair(id: string): Promise<EvalPair | null>;
+  claimEvalPairDelivery(id: string): Promise<EvalPairDeliveryClaim | null>;
+  markEvalPairDelivered(
+    id: string,
+    claimedAt: Date,
+    delivery: { readonly channelId: string; readonly messageTs: string },
+  ): Promise<boolean>;
+  releaseEvalPairDelivery(id: string, claimedAt: Date): Promise<void>;
+  completeCloseProcessing(id: string, claimedAt: Date): Promise<boolean>;
+  releaseCloseProcessing(id: string, claimedAt: Date): Promise<void>;
+  recordEvalVote(input: {
+    readonly pairId: string;
+    readonly choice: "before" | "after";
+    readonly voter: string;
+  }): Promise<{ readonly created: boolean; readonly pair: EvalPair } | null>;
   claimForDelivery(): Promise<NotificationClaim[]>;
   markDelivered(
     id: string,
@@ -97,6 +148,7 @@ export function createReviewRecordDao(
           repositoryId: input.repositoryId,
           repository: input.repository,
           pullRequestNumber: input.pullRequestNumber,
+          baseCommitSha: input.baseCommitSha,
           reviewedCommitSha: input.reviewedCommitSha,
           model: input.instructions.model,
           instructionsVersion: input.instructions.version,
@@ -145,6 +197,224 @@ export function createReviewRecordDao(
           ),
         )
         .orderBy(desc(reviewRecords.createdAt));
+    },
+
+    listFeedback(reviewRecordId) {
+      return db
+        .select()
+        .from(feedback)
+        .where(eq(feedback.reviewRecordId, reviewRecordId))
+        .orderBy(feedback.createdAt);
+    },
+
+    listEvalPairs(reviewRecordId) {
+      return db.select().from(evalPairs).where(eq(evalPairs.reviewRecordId, reviewRecordId));
+    },
+
+    listEvalVotes(pairId) {
+      return db.select().from(evalVotes).where(eq(evalVotes.pairId, pairId));
+    },
+
+    claimCloseProcessing(repositoryId, pullRequestNumber) {
+      const now = new Date();
+      const leaseExpiredBefore = new Date(now.getTime() - notificationLeaseMs);
+
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .select()
+          .from(reviewRecords)
+          .where(
+            and(
+              eq(reviewRecords.repositoryId, repositoryId),
+              eq(reviewRecords.pullRequestNumber, pullRequestNumber),
+              eq(reviewRecords.status, "active"),
+              or(
+                eq(reviewRecords.closeStatus, "pending"),
+                and(
+                  eq(reviewRecords.closeStatus, "processing"),
+                  or(
+                    isNull(reviewRecords.closeClaimedAt),
+                    lt(reviewRecords.closeClaimedAt, leaseExpiredBefore),
+                  ),
+                ),
+              ),
+            ),
+          )
+          .orderBy(desc(reviewRecords.createdAt))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        const record = rows[0];
+        if (!record) return null;
+
+        const claimed = await tx
+          .update(reviewRecords)
+          .set({ closeStatus: "processing", closeClaimedAt: now })
+          .where(eq(reviewRecords.id, record.id))
+          .returning();
+        return { record: requiredRecord(claimed), claimedAt: now };
+      });
+    },
+
+    async addGitHubReactionFeedback(reviewRecordId, reactions) {
+      if (reactions.length === 0) return 0;
+      const inserted = await db
+        .insert(feedback)
+        .values(
+          reactions.map((reaction) => ({
+            reviewRecordId,
+            source: "github" as const,
+            kind: "vote" as const,
+            findingId: reaction.findingId,
+            author: reaction.author,
+            externalId: reaction.externalId,
+            value: reaction.value,
+            createdAt: reaction.createdAt,
+          })),
+        )
+        .onConflictDoNothing({ target: feedback.externalId })
+        .returning({ id: feedback.id });
+      return inserted.length;
+    },
+
+    async createEvalPair(input) {
+      const inserted = await db
+        .insert(evalPairs)
+        .values(input)
+        .onConflictDoNothing({ target: evalPairs.reviewRecordId })
+        .returning();
+      if (inserted[0]) return inserted[0];
+
+      const existing = await db
+        .select()
+        .from(evalPairs)
+        .where(eq(evalPairs.reviewRecordId, input.reviewRecordId))
+        .limit(1);
+      const pair = existing[0];
+      if (!pair) throw new Error("Eval pair insert conflicted but no existing row was found.");
+      return pair;
+    },
+
+    async getEvalPair(id) {
+      const rows = await db.select().from(evalPairs).where(eq(evalPairs.id, id)).limit(1);
+      return rows[0] ?? null;
+    },
+
+    claimEvalPairDelivery(id) {
+      const now = new Date();
+      const leaseExpiredBefore = new Date(now.getTime() - notificationLeaseMs);
+
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .select()
+          .from(evalPairs)
+          .where(
+            and(
+              eq(evalPairs.id, id),
+              or(
+                eq(evalPairs.deliveryStatus, "pending"),
+                and(
+                  eq(evalPairs.deliveryStatus, "delivering"),
+                  or(
+                    isNull(evalPairs.deliveryClaimedAt),
+                    lt(evalPairs.deliveryClaimedAt, leaseExpiredBefore),
+                  ),
+                ),
+              ),
+            ),
+          )
+          .limit(1)
+          .for("update", { skipLocked: true });
+        const pair = rows[0];
+        if (!pair) return null;
+        const attempt = pair.deliveryStatus === "delivering" ? "uncertain_retry" : "first";
+        const updated = await tx
+          .update(evalPairs)
+          .set({
+            deliveryStatus: "delivering",
+            deliveryAttemptedAt: pair.deliveryAttemptedAt ?? now,
+            deliveryClaimedAt: now,
+          })
+          .where(eq(evalPairs.id, id))
+          .returning();
+        return { pair: requiredPair(updated), attempt };
+      });
+    },
+
+    async markEvalPairDelivered(id, claimedAt, delivery) {
+      const updated = await db
+        .update(evalPairs)
+        .set({
+          deliveryStatus: "delivered",
+          postedAt: new Date(),
+          slackChannelId: delivery.channelId,
+          slackMessageTs: delivery.messageTs,
+        })
+        .where(
+          and(
+            eq(evalPairs.id, id),
+            eq(evalPairs.deliveryStatus, "delivering"),
+            eq(evalPairs.deliveryClaimedAt, claimedAt),
+          ),
+        )
+        .returning({ id: evalPairs.id });
+      return updated.length === 1;
+    },
+
+    async releaseEvalPairDelivery(id, claimedAt) {
+      await db
+        .update(evalPairs)
+        .set({ deliveryStatus: "pending", deliveryAttemptedAt: null, deliveryClaimedAt: null })
+        .where(
+          and(
+            eq(evalPairs.id, id),
+            eq(evalPairs.deliveryStatus, "delivering"),
+            eq(evalPairs.deliveryClaimedAt, claimedAt),
+          ),
+        );
+    },
+
+    async completeCloseProcessing(id, claimedAt) {
+      const updated = await db
+        .update(reviewRecords)
+        .set({ closeStatus: "completed", closeProcessedAt: new Date() })
+        .where(
+          and(
+            eq(reviewRecords.id, id),
+            eq(reviewRecords.closeStatus, "processing"),
+            eq(reviewRecords.closeClaimedAt, claimedAt),
+          ),
+        )
+        .returning({ id: reviewRecords.id });
+      return updated.length === 1;
+    },
+
+    async releaseCloseProcessing(id, claimedAt) {
+      await db
+        .update(reviewRecords)
+        .set({ closeStatus: "pending", closeClaimedAt: null })
+        .where(
+          and(
+            eq(reviewRecords.id, id),
+            eq(reviewRecords.closeStatus, "processing"),
+            eq(reviewRecords.closeClaimedAt, claimedAt),
+          ),
+        );
+    },
+
+    async recordEvalVote(input) {
+      const pairRows = await db
+        .select()
+        .from(evalPairs)
+        .where(eq(evalPairs.id, input.pairId))
+        .limit(1);
+      const pair = pairRows[0];
+      if (!pair) return null;
+      const inserted = await db
+        .insert(evalVotes)
+        .values(input)
+        .onConflictDoNothing({ target: [evalVotes.pairId, evalVotes.voter] })
+        .returning({ id: evalVotes.id });
+      return { created: inserted.length === 1, pair };
     },
 
     claimForDelivery() {
@@ -272,4 +542,10 @@ function requiredRecord(records: readonly ReviewRecord[]): ReviewRecord {
   const record = records[0];
   if (!record) throw new Error("ReviewRecord write returned no row.");
   return record;
+}
+
+function requiredPair(pairs: readonly EvalPair[]): EvalPair {
+  const pair = pairs[0];
+  if (!pair) throw new Error("EvalPair write returned no row.");
+  return pair;
 }

@@ -14,6 +14,7 @@ export type CapturedReview = {
 };
 
 export function pullRequestPayload(options: {
+  readonly action?: string;
   readonly draft?: boolean;
   readonly fixture?: "risky" | "safe";
 }) {
@@ -21,7 +22,7 @@ export function pullRequestPayload(options: {
   const fixture = options.fixture ?? "safe";
 
   return {
-    action: "opened",
+    action: options.action ?? "opened",
     installation: { id: 123 },
     repository: {
       id: 91_337,

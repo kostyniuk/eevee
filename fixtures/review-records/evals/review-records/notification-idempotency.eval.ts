@@ -15,6 +15,7 @@ const record: ReviewRecord = {
   repositoryId: 91_337,
   repository: "kostyniuk/fixture",
   pullRequestNumber: 42,
+  baseCommitSha: "0".repeat(40),
   reviewedCommitSha: "a".repeat(40),
   model: "fixture-model",
   instructionsVersion: "b".repeat(64),
@@ -39,6 +40,9 @@ const record: ReviewRecord = {
   notificationDeliveredAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  closeStatus: "pending",
+  closeClaimedAt: null,
+  closeProcessedAt: null,
   createdAt: new Date("2026-08-13T10:00:00Z"),
 };
 
@@ -54,6 +58,21 @@ export default defineEval({
     const dao: ReviewRecordDao = {
       create: async () => record,
       listForPullRequest: async () => [],
+      listFeedback: async () => [],
+      listEvalPairs: async () => [],
+      listEvalVotes: async () => [],
+      claimCloseProcessing: async () => null,
+      addGitHubReactionFeedback: async () => 0,
+      createEvalPair: async () => {
+        throw new Error("unused");
+      },
+      getEvalPair: async () => null,
+      claimEvalPairDelivery: async () => null,
+      markEvalPairDelivered: async () => false,
+      releaseEvalPairDelivery: async () => {},
+      completeCloseProcessing: async () => false,
+      releaseCloseProcessing: async () => {},
+      recordEvalVote: async () => null,
       claimForDelivery: async () => {
         if (delivered) return [];
         const attempt = claims === 0 ? "first" : "uncertain_retry";

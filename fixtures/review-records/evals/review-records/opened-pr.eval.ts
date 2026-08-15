@@ -84,6 +84,7 @@ export default defineEval({
         repositoryId,
         repository: record.repository,
         pullRequestNumber,
+        baseCommitSha: baseSha,
         reviewedCommitSha: "c".repeat(40),
         instructions: reviewerInstructions,
         review: {

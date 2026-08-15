@@ -24,6 +24,11 @@ export const reviewNotificationStatus = pgEnum("review_notification_status", [
   "delivering",
   "delivered",
 ]);
+export const reviewCloseStatus = pgEnum("review_close_status", [
+  "pending",
+  "processing",
+  "completed",
+]);
 export const feedbackSource = pgEnum("feedback_source", ["github", "slack"]);
 export const feedbackKind = pgEnum("feedback_kind", ["vote", "text"]);
 export const evalShuffleOrder = pgEnum("eval_shuffle_order", ["before_first", "after_first"]);
@@ -54,6 +59,7 @@ export const reviewRecords = pgTable(
     repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
     repository: text().notNull(),
     pullRequestNumber: integer("pull_request_number").notNull(),
+    baseCommitSha: varchar("base_commit_sha", { length: 40 }),
     reviewedCommitSha: varchar("reviewed_commit_sha", { length: 40 }).notNull(),
     model: text().notNull(),
     instructionsVersion: varchar("instructions_version", { length: 64 }).notNull(),
@@ -82,6 +88,9 @@ export const reviewRecords = pgTable(
     notificationDeliveredAt: timestamp("notification_delivered_at", { withTimezone: true }),
     slackChannelId: text("slack_channel_id"),
     slackMessageTs: text("slack_message_ts"),
+    closeStatus: reviewCloseStatus("close_status").notNull().default("pending"),
+    closeClaimedAt: timestamp("close_claimed_at", { withTimezone: true }),
+    closeProcessedAt: timestamp("close_processed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -131,11 +140,15 @@ export const feedback = pgTable(
     kind: feedbackKind().notNull(),
     findingId: uuid("finding_id"),
     author: text().notNull(),
+    externalId: text("external_id"),
     body: text(),
     value: text(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("feedback_review_record_idx").on(table.reviewRecordId, table.createdAt)],
+  (table) => [
+    index("feedback_review_record_idx").on(table.reviewRecordId, table.createdAt),
+    uniqueIndex("feedback_external_id_unique").on(table.externalId),
+  ],
 );
 
 export const evalPairs = pgTable(
@@ -148,10 +161,18 @@ export const evalPairs = pgTable(
     beforeDiff: jsonb("before_diff").$type<DiffReference>().notNull(),
     afterDiff: jsonb("after_diff").$type<DiffReference>().notNull(),
     shuffleOrder: evalShuffleOrder("shuffle_order").notNull(),
+    deliveryStatus: reviewNotificationStatus("delivery_status").notNull().default("pending"),
+    deliveryAttemptedAt: timestamp("delivery_attempted_at", { withTimezone: true }),
+    deliveryClaimedAt: timestamp("delivery_claimed_at", { withTimezone: true }),
     postedAt: timestamp("posted_at", { withTimezone: true }),
+    slackChannelId: text("slack_channel_id"),
+    slackMessageTs: text("slack_message_ts"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("eval_pairs_review_record_idx").on(table.reviewRecordId)],
+  (table) => [
+    uniqueIndex("eval_pairs_review_record_unique").on(table.reviewRecordId),
+    index("eval_pairs_delivery_idx").on(table.deliveryStatus, table.deliveryClaimedAt),
+  ],
 );
 
 export const evalVotes = pgTable(
