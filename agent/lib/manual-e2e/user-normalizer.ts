@@ -1,9 +1,7 @@
-type User = { name: string; score: number };
+type User = { readonly name: string; readonly score: number };
 
-export function normalizeUsers(users: User[]): User[] {
-  users.sort((left, right) => right.score - left.score);
-  for (const user of users) {
-    user.name = user.name.trim();
-  }
-  return users;
+export function normalizeUsers(users: readonly User[]): User[] {
+  return users
+    .map((user) => ({ ...user, name: user.name.trim() }))
+    .sort((left, right) => right.score - left.score);
 }
