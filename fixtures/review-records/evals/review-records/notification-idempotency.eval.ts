@@ -15,6 +15,7 @@ const record: ReviewRecord = {
   repositoryId: 91_337,
   repository: "kostyniuk/fixture",
   pullRequestNumber: 42,
+  pullRequestTitle: "Fixture pull request",
   baseCommitSha: "0".repeat(40),
   reviewedCommitSha: "a".repeat(40),
   model: "fixture-model",

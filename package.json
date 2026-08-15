@@ -8,6 +8,7 @@
   "scripts": {
     "build": "eve build",
     "db:generate": "drizzle-kit generate",
+    "db:backfill-eval-evidence": "node --experimental-strip-types scripts/backfill-eval-evidence.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "dev": "eve dev",

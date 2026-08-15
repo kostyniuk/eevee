@@ -36,6 +36,20 @@
       "when": 1786740747387,
       "tag": "0004_big_the_anarchist",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786813497126,
+      "tag": "0005_chubby_freak",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786814291347,
+      "tag": "0006_glamorous_ted_forrester",
+      "breakpoints": true
     }
   ]
 }

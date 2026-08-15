@@ -16,6 +16,8 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
+import type { EvalEvidence } from "./finding-focused-diff";
+
 import type { Review } from "./review-helper";
 
 export const reviewStatus = pgEnum("review_status", ["active", "superseded"]);
@@ -59,6 +61,7 @@ export const reviewRecords = pgTable(
     repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
     repository: text().notNull(),
     pullRequestNumber: integer("pull_request_number").notNull(),
+    pullRequestTitle: text("pull_request_title"),
     baseCommitSha: varchar("base_commit_sha", { length: 40 }),
     reviewedCommitSha: varchar("reviewed_commit_sha", { length: 40 }).notNull(),
     model: text().notNull(),
@@ -160,6 +163,8 @@ export const evalPairs = pgTable(
       .references(() => reviewRecords.id, { onDelete: "cascade" }),
     beforeDiff: jsonb("before_diff").$type<DiffReference>().notNull(),
     afterDiff: jsonb("after_diff").$type<DiffReference>().notNull(),
+    // Nullable only for pairs created before evidence was persisted.
+    evidence: jsonb().$type<EvalEvidence>(),
     shuffleOrder: evalShuffleOrder("shuffle_order").notNull(),
     deliveryStatus: reviewNotificationStatus("delivery_status").notNull().default("pending"),
     deliveryAttemptedAt: timestamp("delivery_attempted_at", { withTimezone: true }),

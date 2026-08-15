@@ -103,6 +103,17 @@ export default defineEval({
       const pair = pairs[0]!;
       t.check(pair.beforeDiff.headSha, equals(reviewedSha));
       t.check(pair.afterDiff.headSha, equals(mergedSha));
+      t.check(pair.evidence?.version, equals(2));
+      t.check(pair.evidence?.mode, equals("finding-focused"));
+      t.check(pair.evidence?.version === 2 ? pair.evidence.findings.length : 0, equals(2));
+      t.check(
+        pair.evidence?.version === 2 ? pair.evidence.findings[0]?.before.join("\n") : "",
+        includes("bad-empty-result"),
+      );
+      t.check(
+        pair.evidence?.version === 2 ? pair.evidence.findings[0]?.after.join("\n") : "",
+        includes("fixed-empty-result"),
+      );
       t.check(pair.deliveryStatus, equals("delivered"));
       t.check(github.graphqlCalls(), equals(4));
 

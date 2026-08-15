@@ -29,6 +29,7 @@ export default defineEval({
       t.check(record.repository, equals("kostyniuk/fixture"));
       t.check(record.pullRequestNumber, equals(pullRequestNumber));
       t.check(record.reviewedCommitSha, equals(headSha));
+      t.check(record.pullRequestTitle, equals("Exercise persistence"));
       t.check(record.model, equals(reviewerInstructions.model));
       t.check(record.instructionsSource, equals("model"));
       t.check(record.instructionsVersion, equals(reviewerInstructions.version));

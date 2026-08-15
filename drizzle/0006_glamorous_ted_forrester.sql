@@ -1,0 +1,1 @@
+ALTER TABLE "review_records" ADD COLUMN "pull_request_title" text;
