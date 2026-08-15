@@ -359,9 +359,9 @@ async function harvestReactions(
 ): Promise<GitHubReactionFeedback[]> {
   const subjects = [
     { nodeId: surface.reviewNodeId, findingId: null },
-    ...surface.comments.map((comment, index) => ({
+    ...surface.comments.map((comment) => ({
       nodeId: comment.nodeId,
-      findingId: matchFinding(record, comment.body, index),
+      findingId: matchFinding(record, comment.body),
     })),
   ];
   const batches = await Promise.all(
@@ -437,15 +437,11 @@ function reactionConnection(value: unknown): {
   };
 }
 
-function matchFinding(
-  record: ReviewRecord,
-  commentBody: string,
-  fallbackIndex: number,
-): string | null {
+function matchFinding(record: ReviewRecord, commentBody: string): string | null {
   const exact = record.findings.find(
     (finding) => `**${finding.title}**\n\n${finding.body}` === commentBody,
   );
-  return exact?.id ?? record.findings[fallbackIndex]?.id ?? null;
+  return exact?.id ?? null;
 }
 
 function findPairMessage(messages: unknown, pairId: string): string | null {

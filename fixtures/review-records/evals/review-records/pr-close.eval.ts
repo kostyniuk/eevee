@@ -62,19 +62,25 @@ export default defineEval({
 
       await waitForClose(t, dao, pullRequestNumber, record.id);
       const feedback = await dao.listFeedback(record.id);
-      t.check(feedback.length, equals(2));
+      t.check(feedback.length, equals(3));
       t.check(
         feedback
           .map(({ value }) => value)
           .sort()
           .join(","),
-        equals("down,up"),
+        equals("down,up,up"),
       );
       t.check(
         feedback.find(
           ({ externalId }) => externalId === `github-reaction:R_FINDING_${pullRequestNumber}`,
         )?.findingId,
         equals(record.findings[0]?.id),
+      );
+      t.check(
+        feedback.find(
+          ({ externalId }) => externalId === `github-reaction:R_UNMATCHED_${pullRequestNumber}`,
+        )?.findingId,
+        equals(null),
       );
 
       const pairs = await dao.listEvalPairs(record.id);
@@ -83,7 +89,7 @@ export default defineEval({
       t.check(pair.beforeDiff.headSha, equals(reviewedSha));
       t.check(pair.afterDiff.headSha, equals(mergedSha));
       t.check(pair.deliveryStatus, equals("delivered"));
-      t.check(github.graphqlCalls(), equals(2));
+      t.check(github.graphqlCalls(), equals(3));
 
       const message = slack.evalMessages()[0];
       t.check(slack.evalMessages().length, equals(1));
@@ -263,6 +269,10 @@ async function startGitHubApiStub(): Promise<{
             node_id: "PRRC_FINDING",
             body: "**Handle the empty input**\n\nThe empty-input path returns the wrong value.",
           },
+          {
+            node_id: "PRRC_UNMATCHED",
+            body: "A human-authored comment that is not a stored finding.",
+          },
         ]),
       );
       return;
@@ -271,6 +281,7 @@ async function startGitHubApiStub(): Promise<{
       graphqlCalls += 1;
       const body = JSON.parse(await readBody(request)) as { variables?: { id?: string } };
       const isFinding = body.variables?.id === "PRRC_FINDING";
+      const isUnmatched = body.variables?.id === "PRRC_UNMATCHED";
       response.end(
         JSON.stringify({
           data: {
@@ -280,7 +291,9 @@ async function startGitHubApiStub(): Promise<{
                   {
                     id: isFinding
                       ? `R_FINDING_${pullRequestNumber}`
-                      : `R_REVIEW_${pullRequestNumber}`,
+                      : isUnmatched
+                        ? `R_UNMATCHED_${pullRequestNumber}`
+                        : `R_REVIEW_${pullRequestNumber}`,
                     content: isFinding ? "THUMBS_DOWN" : "THUMBS_UP",
                     createdAt: "2026-08-14T12:00:00Z",
                     user: { login: isFinding ? "finding-judge" : "review-judge" },
