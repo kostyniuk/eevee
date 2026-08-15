@@ -14,6 +14,7 @@
     "dev": "eve dev",
     "eval:review-records": "sh scripts/eval-review-records.sh",
     "start": "eve start",
+    "test:github-workspace": "node --experimental-strip-types --test scripts/github-workspace.test.ts",
     "typecheck": "tsc",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check"
