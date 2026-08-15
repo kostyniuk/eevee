@@ -26,22 +26,29 @@ type DiffLine = {
   readonly newLine: number | null;
 };
 
-type LocatedLine = {
+type DiffFocus = {
+  readonly kind: "diff";
   readonly file: DiffFile;
   readonly hunk: DiffHunk;
   readonly lineIndex: number;
+};
+
+type LocatedLine = DiffFocus & {
   readonly reviewedLine: number;
 };
 
-type Focus = {
-  readonly file: DiffFile;
-  readonly hunk: DiffHunk;
+type SourceFocus = {
+  readonly kind: "source";
+  readonly path: string;
+  readonly lines: readonly string[];
   readonly lineIndex: number;
 };
 
+type Focus = DiffFocus | SourceFocus;
+
 export type FindingFocusedComparison = {
-  readonly before: string;
-  readonly after: string;
+  readonly before: readonly string[];
+  readonly after: readonly string[];
 };
 
 /** Build both blind sides from every stored finding, or no comparison if any line is unsafe. */
@@ -63,20 +70,29 @@ export async function buildFindingFocusedComparison(input: {
   if (!reviewedFiles || !transitionFiles || !finalFiles) return null;
   const before: Focus[] = [];
   const after: Focus[] = [];
+  const sources = new Map<string, Promise<readonly string[] | null>>();
 
   for (const finding of input.findings) {
     const reviewed = locateFinding(reviewedFiles, finding);
     if (!reviewed) return null;
     const mapped = mapReviewedLine(transitionFiles, reviewed.file.filename, reviewed.reviewedLine);
     if (!mapped) return null;
-    const final = locateNewLine(finalFiles, mapped.path, mapped.line);
+    const final =
+      locateNewLine(finalFiles, mapped.path, mapped.line) ??
+      (await locateSourceLine(
+        input.request,
+        input.repository,
+        input.finalSha,
+        mapped.path,
+        mapped.line,
+        sources,
+      ));
     if (!final) return null;
     before.push(reviewed);
     after.push(final);
   }
 
-  const rendered = { before: renderFocuses(before), after: renderFocuses(after) };
-  return rendered.before.length <= 2_400 && rendered.after.length <= 2_400 ? rendered : null;
+  return { before: renderFocuses(before), after: renderFocuses(after) };
 }
 
 async function fetchComparison(
@@ -124,7 +140,7 @@ function locateFinding(files: readonly DiffFile[], finding: Finding): LocatedLin
     const line = hunk.lines[lineIndex]!;
     // A removed LEFT-side line has no unambiguous location in the reviewed tree.
     if (line.newLine === null) return null;
-    return { file, hunk, lineIndex, reviewedLine: line.newLine };
+    return { kind: "diff", file, hunk, lineIndex, reviewedLine: line.newLine };
   }
   return null;
 }
@@ -165,16 +181,13 @@ function replacementLine(lines: readonly DiffLine[], deletedIndex: number): numb
   let end = deletedIndex;
   while (end + 1 < lines.length && lines[end + 1]?.kind !== "context") end += 1;
   const changes = lines.slice(start, end + 1);
-  const deletionOffset = changes
-    .slice(0, deletedIndex - start + 1)
-    .filter((line) => line.kind === "deletion").length;
   const additions = changes.filter(
     (line): line is DiffLine & { readonly newLine: number } =>
       line.kind === "addition" && line.newLine !== null,
   );
   const deletionCount = changes.filter((line) => line.kind === "deletion").length;
-  if (deletionCount !== additions.length) return null;
-  return additions[deletionOffset - 1]?.newLine ?? null;
+  if (deletionCount !== 1 || additions.length !== 1) return null;
+  return additions[0]!.newLine;
 }
 
 function locateNewLine(files: readonly DiffFile[], path: string, lineNumber: number): Focus | null {
@@ -184,37 +197,128 @@ function locateNewLine(files: readonly DiffFile[], path: string, lineNumber: num
     const lineIndex = hunk.lines.findIndex(
       (line) => line.newLine === lineNumber && line.kind !== "deletion",
     );
-    if (lineIndex >= 0) return { file, hunk, lineIndex };
+    if (lineIndex >= 0) return { kind: "diff", file, hunk, lineIndex };
   }
   return null;
 }
 
-function renderFocuses(focuses: readonly Focus[]): string {
+async function locateSourceLine(
+  request: GitHubRequest,
+  repository: string,
+  ref: string,
+  path: string,
+  lineNumber: number,
+  cache: Map<string, Promise<readonly string[] | null>>,
+): Promise<SourceFocus | null> {
+  let pending = cache.get(path);
+  if (!pending) {
+    pending = fetchSource(request, repository, ref, path);
+    cache.set(path, pending);
+  }
+  const lines = await pending;
+  const lineIndex = lineNumber - 1;
+  return lines && lineIndex >= 0 && lineIndex < lines.length
+    ? { kind: "source", path, lines, lineIndex }
+    : null;
+}
+
+async function fetchSource(
+  request: GitHubRequest,
+  repository: string,
+  ref: string,
+  path: string,
+): Promise<readonly string[] | null> {
+  const [owner, repo] = splitRepository(repository);
+  let response: Awaited<ReturnType<GitHubRequest>>;
+  try {
+    response = await request<unknown>({
+      method: "GET",
+      path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}?ref=${encodeURIComponent(ref)}`,
+    });
+  } catch (error) {
+    if (isObject(error) && error.status === 404) return null;
+    throw error;
+  }
+  if (
+    !isObject(response.body) ||
+    response.body.type !== "file" ||
+    response.body.encoding !== "base64" ||
+    typeof response.body.content !== "string"
+  ) {
+    return null;
+  }
+  const text = Buffer.from(response.body.content.replaceAll("\n", ""), "base64").toString("utf8");
+  return text.split("\n");
+}
+
+function renderFocuses(focuses: readonly Focus[]): readonly string[] {
   const groups = new Map<string, { focus: Focus; lineIndexes: number[] }>();
   for (const focus of focuses) {
-    const key = `${focus.file.filename}\0${focus.hunk.header}`;
+    const key =
+      focus.kind === "diff"
+        ? `diff\0${focus.file.filename}\0${focus.hunk.header}`
+        : `source\0${focus.path}`;
     const group = groups.get(key);
     if (group) group.lineIndexes.push(focus.lineIndex);
     else groups.set(key, { focus, lineIndexes: [focus.lineIndex] });
   }
 
-  return [...groups.values()]
-    .map(({ focus, lineIndexes }) => {
-      const included = new Set<number>();
-      for (const index of lineIndexes) {
-        const start = Math.max(0, index - 3);
-        const end = Math.min(focus.hunk.lines.length - 1, index + 3);
-        for (let current = start; current <= end; current += 1) included.add(current);
-      }
-      const selected = [...included].sort((left, right) => left - right);
-      const lines: string[] = [];
-      for (const [position, index] of selected.entries()) {
-        if (position > 0 && index > selected[position - 1]! + 1) lines.push(" …");
-        lines.push(focus.hunk.lines[index]!.raw);
-      }
-      return `--- ${focus.file.filename}\n${focus.hunk.header}\n${lines.join("\n")}`;
-    })
-    .join("\n\n");
+  const excerpts = [...groups.values()].flatMap(({ focus, lineIndexes }) =>
+    mergeWindows(lineIndexes, focusLength(focus)).map(([start, end]) =>
+      renderWindow(focus, start, end),
+    ),
+  );
+  return chunkText(excerpts.join("\n\n"), 2_600);
+}
+
+function focusLength(focus: Focus): number {
+  return focus.kind === "diff" ? focus.hunk.lines.length : focus.lines.length;
+}
+
+function mergeWindows(
+  lineIndexes: readonly number[],
+  lineCount: number,
+): readonly (readonly [number, number])[] {
+  const windows = [...new Set(lineIndexes)]
+    .sort((left, right) => left - right)
+    .map((index) => [Math.max(0, index - 3), Math.min(lineCount - 1, index + 3)] as const);
+  const merged: Array<[number, number]> = [];
+  for (const [start, end] of windows) {
+    const last = merged.at(-1);
+    if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+    else merged.push([start, end]);
+  }
+  return merged;
+}
+
+function renderWindow(focus: Focus, start: number, end: number): string {
+  if (focus.kind === "diff") {
+    return `--- ${focus.file.filename}\n${focus.hunk.header}\n${focus.hunk.lines
+      .slice(start, end + 1)
+      .map(({ raw }) => raw)
+      .join("\n")}`;
+  }
+  const body = focus.lines
+    .slice(start, end + 1)
+    .map((line) => ` ${line}`)
+    .join("\n");
+  return `--- ${focus.path}\n@@ lines ${start + 1}-${end + 1} @@\n${body}`;
+}
+
+function chunkText(value: string, maximum: number): readonly string[] {
+  const chunks: string[] = [];
+  let rest = value;
+  while (rest.length > maximum) {
+    const newline = rest.lastIndexOf("\n", maximum);
+    const end = newline > 0 ? newline : maximum;
+    chunks.push(rest.slice(0, end));
+    rest = rest.slice(end + (newline > 0 ? 1 : 0));
+  }
+  if (rest.length > 0) chunks.push(rest);
+  return chunks;
 }
 
 function parsePatch(patch: string): readonly DiffHunk[] {

@@ -204,7 +204,10 @@ async function deliverEvalPair(input: {
   readonly channelId: string;
   readonly slack: EvalComparisonSlackApi;
   readonly dao: ReviewRecordDao;
-  readonly comparison: { readonly before: string; readonly after: string };
+  readonly comparison: {
+    readonly before: readonly string[];
+    readonly after: readonly string[];
+  };
 }) {
   const claim = await input.dao.claimEvalPairDelivery(input.pair.id);
   if (!claim) {
@@ -254,7 +257,11 @@ async function deliverEvalPair(input: {
   if (!marked) throw new Error("Eval-pair delivery claim expired before delivery was recorded.");
 }
 
-function formatEvalPairBlocks(pair: EvalPair, before: string, after: string): readonly unknown[] {
+function formatEvalPairBlocks(
+  pair: EvalPair,
+  before: readonly string[],
+  after: readonly string[],
+): readonly unknown[] {
   const sideA = pair.shuffleOrder === "before_first" ? before : after;
   const sideB = pair.shuffleOrder === "before_first" ? after : before;
   return [
@@ -265,14 +272,8 @@ function formatEvalPairBlocks(pair: EvalPair, before: string, after: string): re
         text: "*Blind PR code comparison*\nWhich version is stronger? Identities stay hidden until you vote.",
       },
     },
-    {
-      type: "section",
-      text: { type: "mrkdwn", text: `*Side A*\n\`\`\`${safeFence(sideA)}\`\`\`` },
-    },
-    {
-      type: "section",
-      text: { type: "mrkdwn", text: `*Side B*\n\`\`\`${safeFence(sideB)}\`\`\`` },
-    },
+    ...formatSideBlocks("A", sideA),
+    ...formatSideBlocks("B", sideB),
     {
       type: "actions",
       elements: [
@@ -291,6 +292,16 @@ function formatEvalPairBlocks(pair: EvalPair, before: string, after: string): re
       ],
     },
   ];
+}
+
+function formatSideBlocks(side: "A" | "B", chunks: readonly string[]): readonly unknown[] {
+  return chunks.map((chunk, index) => ({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*Side ${side}${chunks.length > 1 ? ` · ${index + 1}/${chunks.length}` : ""}*\n\`\`\`${safeFence(chunk)}\`\`\``,
+    },
+  }));
 }
 
 type PublishedReview = {
