@@ -17,6 +17,7 @@ import {
   deliverPendingNotifications,
   type SlackNotificationApi,
 } from "./review-notification-service";
+import { processClosedPullRequest, type EvalComparisonSlackApi } from "./eval-comparison-service";
 import { getReviewRecordDao } from "./review-record-dao";
 import type { ReviewerInstructions } from "./reviewer-instructions";
 
@@ -47,12 +48,31 @@ export function createGitHubChannel(options: {
     readonly channelId: string;
     readonly slack: SlackNotificationApi;
   };
+  readonly evals: {
+    readonly channelId: string;
+    readonly slack: EvalComparisonSlackApi;
+  };
 }) {
   return githubChannel({
     botName,
     credentials: options.credentials,
     api: options.apiBaseUrl ? { apiBaseUrl: options.apiBaseUrl } : undefined,
-    onPullRequest(ctx, pullRequest) {
+    async onPullRequest(ctx, pullRequest) {
+      if (pullRequest.action === "closed") {
+        await processClosedPullRequest({
+          repositoryId: ctx.repository.id,
+          repository: ctx.repository.fullName,
+          pullRequestNumber: pullRequest.pullRequestNumber,
+          finalHeadSha: pullRequest.headSha,
+          merged: pullRequest.raw.merged === true,
+          evalChannelId: options.evals.channelId,
+          github: ctx.github,
+          slack: options.evals.slack,
+          dao: getReviewRecordDao(),
+        });
+        return null;
+      }
+
       // SHIPPED: auto-review only on opened, never drafts, never pushes.
       // NOT SHIPPED: GitHub sidebar "Re-request review" (action review_requested).
       // Re-run today is onComment (mention) below.
@@ -125,6 +145,7 @@ export function createGitHubChannel(options: {
           repositoryId: channel.repository.id,
           repository: channel.repository.fullName,
           pullRequestNumber,
+          baseCommitSha: channel.state.baseSha,
           reviewedCommitSha,
           instructions: options.instructions,
           review,

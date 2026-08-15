@@ -23,7 +23,10 @@ columns.
    Slack connector needs `chat:write` plus the matching history scope
    (`channels:history` for a public channel or `groups:history` for a private
    channel) so an interrupted delivery can be matched by message metadata.
-5. Add all three variables to the production environment, then run
+5. Set `SLACK_EVAL_CHANNEL_ID` to the dedicated channel for blind Eval
+   Comparisons. Enable Slack interactivity for A/B votes; the same history
+   scope lets an interrupted pair delivery recover by message metadata.
+6. Add all four variables to the production environment, then run
    `npm run db:migrate` with those variables available.
 
 Never commit either connection string. `.env.example` contains safe templates.

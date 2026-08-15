@@ -2,9 +2,9 @@
 
 > Interview: this file is the *design*, not the product. Do not describe a bullet as live unless it is in the SHIPPED list.
 
-**SHIPPED:** install via Connect; review on PR `opened` (skip drafts); do not review on push; mention `@eevee-agent` to chat or re-run; advisory `COMMENT` review; safety rating + criteria from instructions; inline findings below threshold; ReviewRecord in Postgres; Slack announcement via claim + metadata hop.
+**SHIPPED:** install via Connect; review on PR `opened` (skip drafts); do not review on push; mention `@eevee-agent` to chat or re-run; advisory `COMMENT` review; safety rating + criteria from instructions; inline findings below threshold; ReviewRecord in Postgres; Slack announcement via claim + metadata hop; close-time GitHub reaction harvest; blind, shuffled before/after Eval Comparisons with Slack voting and post-vote reveal.
 
-**NOT SHIPPED:** sidebar re-request review; Slack re-run button; stale marker on push; coalesce in-flight re-runs; thumbs / thread-reply feedback; GitHub reaction harvest; blind eval pairs; merge gating.
+**NOT SHIPPED:** sidebar re-request review; Slack re-run button; stale marker on push; coalesce in-flight re-runs; Slack thumbs / thread-reply feedback; live GitHub inline-reply feedback; merge gating.
 
 Status: ready-for-agent
 Design session: 2026-08-10. Vocabulary per `CONTEXT.md`; decisions constrained by `docs/adr/0001` (advisory-only Reviews) and `docs/adr/0002` (Evals measure Review impact, not review text).

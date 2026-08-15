@@ -1,4 +1,5 @@
 import { createGitHubChannel } from "#lib/github-channel";
+import { createEvalComparisonSlackApi } from "#lib/eval-comparison-service";
 import {
   createSlackNotificationApi,
   type SlackApiCall,
@@ -52,5 +53,9 @@ export default createGitHubChannel({
   notifications: {
     channelId: "C_REVIEW_FIXTURE",
     slack: createSlackNotificationApi("fixture-slack-token", callFixtureSlackApi),
+  },
+  evals: {
+    channelId: "C_EVAL_FIXTURE",
+    slack: createEvalComparisonSlackApi("fixture-slack-token", callFixtureSlackApi),
   },
 });
