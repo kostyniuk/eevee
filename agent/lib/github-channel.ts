@@ -64,6 +64,9 @@ export function createGitHubChannel(options: {
           repository: ctx.repository.fullName,
           pullRequestNumber: pullRequest.pullRequestNumber,
           finalHeadSha: pullRequest.headSha,
+          // Recovers the comparison base for ReviewRecords written before the
+          // base-SHA lookup below existed.
+          finalBaseSha: readBaseSha(pullRequest.raw),
           merged: pullRequest.raw.merged === true,
           evalChannelId: options.evals.channelId,
           github: ctx.github,
@@ -125,7 +128,13 @@ export function createGitHubChannel(options: {
           throw new Error("Cannot persist a ReviewRecord without the reviewed commit SHA.");
         }
 
-        const pullRequestTitle = await loadPullRequestTitle(
+        // channel.state.baseSha is null when no pull_request event ever seeded
+        // this conversation — a PR opened as a draft is dropped, and an
+        // issue_comment payload carries no SHAs at all. eve's checkout hook
+        // restores state.headSha but never state.baseSha, so the base has to
+        // come from GitHub or the ReviewRecord is stored without one and the
+        // close-time Eval comparison has nothing to diff against.
+        const pullRequest = await loadPullRequest(
           channel.github.request,
           channel.repository.fullName,
           pullRequestNumber,
@@ -151,8 +160,8 @@ export function createGitHubChannel(options: {
           repositoryId: channel.repository.id,
           repository: channel.repository.fullName,
           pullRequestNumber,
-          pullRequestTitle,
-          baseCommitSha: channel.state.baseSha,
+          pullRequestTitle: pullRequest.title,
+          baseCommitSha: channel.state.baseSha ?? pullRequest.baseSha,
           reviewedCommitSha,
           instructions: options.instructions,
           review,
@@ -168,21 +177,30 @@ export function createGitHubChannel(options: {
   });
 }
 
-async function loadPullRequestTitle(
+async function loadPullRequest(
   request: GitHubInboundContext["github"]["request"],
   repository: string,
   pullRequestNumber: number,
-): Promise<string> {
+): Promise<{ readonly title: string; readonly baseSha: string | null }> {
   const [owner, repo] = repository.split("/");
   if (!owner || !repo) throw new Error(`Invalid GitHub repository: ${repository}`);
-  const response = await request<{ readonly title?: unknown }>({
+  const response = await request<{ readonly title?: unknown; readonly base?: unknown }>({
     method: "GET",
     path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullRequestNumber}`,
   });
-  if (typeof response.body.title !== "string" || !response.body.title.trim()) {
-    return `Pull request #${pullRequestNumber}`;
-  }
-  return response.body.title.trim();
+  const title =
+    typeof response.body.title === "string" && response.body.title.trim()
+      ? response.body.title.trim()
+      : `Pull request #${pullRequestNumber}`;
+  return { title, baseSha: readBaseSha(response.body) };
+}
+
+/** Read `base.sha` out of a GitHub pull-request object of unknown shape. */
+function readBaseSha(pullRequest: { readonly base?: unknown }): string | null {
+  const base = pullRequest.base;
+  if (typeof base !== "object" || base === null) return null;
+  const sha = (base as { readonly sha?: unknown }).sha;
+  return typeof sha === "string" && sha.trim() ? sha.trim() : null;
 }
 
 async function loadDiscussion(
