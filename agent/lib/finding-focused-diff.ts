@@ -95,6 +95,7 @@ export async function buildFindingFocusedComparison(input: {
   return { before: renderFocuses(before), after: renderFocuses(after) };
 }
 
+/** GitHub's Compare API returns patch hunks, not full files; parse those hunks for line lookup. */
 async function fetchComparison(
   request: GitHubRequest,
   repository: string,
@@ -122,6 +123,7 @@ async function fetchComparison(
   });
 }
 
+/** Normalize a RIGHT new-side or LEFT old-side Finding anchor to a reviewed-file line. */
 function locateFinding(files: readonly DiffFile[], finding: Finding): LocatedLine | null {
   const file = files.find((candidate) =>
     finding.side === "LEFT"
@@ -145,6 +147,13 @@ function locateFinding(files: readonly DiffFile[], finding: Finding): LocatedLin
   return null;
 }
 
+/**
+ * Map one line from the reviewed SHA to the final SHA.
+ *
+ * Parsed context lines carry both line numbers, so they give an exact mapping.
+ * A line outside all hunks moves only by the net additions and deletions in
+ * earlier hunks. A renamed file uses GitHub's previous_filename field.
+ */
 function mapReviewedLine(
   files: readonly DiffFile[],
   path: string,
@@ -175,6 +184,7 @@ function mapReviewedLine(
   return { path: file.filename, line: reviewedLine + offset };
 }
 
+/** Map a deleted reviewed line only when its change block has one clear replacement line. */
 function replacementLine(lines: readonly DiffLine[], deletedIndex: number): number | null {
   let start = deletedIndex;
   while (start > 0 && lines[start - 1]?.kind !== "context") start -= 1;
@@ -190,6 +200,7 @@ function replacementLine(lines: readonly DiffLine[], deletedIndex: number): numb
   return additions[0]!.newLine;
 }
 
+/** Return the final diff hunk when it contains the mapped line; the caller handles no-hunk cases. */
 function locateNewLine(files: readonly DiffFile[], path: string, lineNumber: number): Focus | null {
   const file = files.find((candidate) => candidate.filename === path);
   if (!file) return null;
@@ -202,6 +213,7 @@ function locateNewLine(files: readonly DiffFile[], path: string, lineNumber: num
   return null;
 }
 
+/** Use final source context when a safely mapped line is not present in a final diff hunk. */
 async function locateSourceLine(
   request: GitHubRequest,
   repository: string,
@@ -321,6 +333,13 @@ function chunkText(value: string, maximum: number): readonly string[] {
   return chunks;
 }
 
+/**
+ * Turn GitHub's unified patch text into an old-line/new-line lookup table.
+ *
+ * A hunk header such as `@@ -10,4 +10,6 @@` starts the old counter at 10 and
+ * the new counter at 10. Context lines advance both counters, `+` lines advance
+ * only the new counter, and `-` lines advance only the old counter.
+ */
 function parsePatch(patch: string): readonly DiffHunk[] {
   const hunks: DiffHunk[] = [];
   const lines = patch.split("\n");
