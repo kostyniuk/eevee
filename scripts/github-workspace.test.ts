@@ -16,7 +16,7 @@ test("trusts the exact workspace used by Eve's GitHub checkout", async () => {
   assert.deepEqual(commands, ["git config --global --add safe.directory /workspace"]);
 });
 
-test("fails session initialization when the Git safety configuration fails", async () => {
+test("fails sandbox setup when the Git safety configuration fails", async () => {
   await assert.rejects(
     trustWorkspace({
       async run() {
