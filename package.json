@@ -8,11 +8,13 @@
   "scripts": {
     "build": "eve build",
     "db:generate": "drizzle-kit generate",
+    "db:backfill-eval-evidence": "node --experimental-strip-types scripts/backfill-eval-evidence.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "dev": "eve dev",
     "eval:review-records": "sh scripts/eval-review-records.sh",
     "start": "eve start",
+    "test:github-workspace": "node --experimental-strip-types --test scripts/github-workspace.test.ts",
     "typecheck": "tsc",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check"

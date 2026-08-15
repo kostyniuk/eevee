@@ -125,6 +125,12 @@ export function createGitHubChannel(options: {
           throw new Error("Cannot persist a ReviewRecord without the reviewed commit SHA.");
         }
 
+        const pullRequestTitle = await loadPullRequestTitle(
+          channel.github.request,
+          channel.repository.fullName,
+          pullRequestNumber,
+        );
+
         // 1/3 GitHub POST /reviews — NOT idempotent. A step retry after this
         // succeeds posts a second formal review on the PR.
         await channel.github.request({
@@ -145,6 +151,7 @@ export function createGitHubChannel(options: {
           repositoryId: channel.repository.id,
           repository: channel.repository.fullName,
           pullRequestNumber,
+          pullRequestTitle,
           baseCommitSha: channel.state.baseSha,
           reviewedCommitSha,
           instructions: options.instructions,
@@ -159,6 +166,23 @@ export function createGitHubChannel(options: {
       },
     },
   });
+}
+
+async function loadPullRequestTitle(
+  request: GitHubInboundContext["github"]["request"],
+  repository: string,
+  pullRequestNumber: number,
+): Promise<string> {
+  const [owner, repo] = repository.split("/");
+  if (!owner || !repo) throw new Error(`Invalid GitHub repository: ${repository}`);
+  const response = await request<{ readonly title?: unknown }>({
+    method: "GET",
+    path: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullRequestNumber}`,
+  });
+  if (typeof response.body.title !== "string" || !response.body.title.trim()) {
+    return `Pull request #${pullRequestNumber}`;
+  }
+  return response.body.title.trim();
 }
 
 async function loadDiscussion(

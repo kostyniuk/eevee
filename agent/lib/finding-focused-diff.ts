@@ -46,10 +46,27 @@ type SourceFocus = {
 
 type Focus = DiffFocus | SourceFocus;
 
-export type FindingFocusedComparison = {
+type EvalEvidenceV1 = {
+  readonly version: 1;
+  readonly mode: "finding-focused" | "full-patch";
   readonly before: readonly string[];
   readonly after: readonly string[];
 };
+
+export type EvalFindingEvidence = {
+  readonly findingId: string;
+  readonly title: string;
+  readonly before: readonly string[];
+  readonly after: readonly string[];
+};
+
+export type EvalEvidenceV2 = {
+  readonly version: 2;
+  readonly mode: "finding-focused" | "full-patch";
+  readonly findings: readonly EvalFindingEvidence[];
+};
+
+export type EvalEvidence = EvalEvidenceV1 | EvalEvidenceV2;
 
 /** Build both blind sides from every stored finding, or no comparison if any line is unsafe. */
 export async function buildFindingFocusedComparison(input: {
@@ -59,7 +76,7 @@ export async function buildFindingFocusedComparison(input: {
   readonly reviewedSha: string;
   readonly finalSha: string;
   readonly findings: readonly Finding[];
-}): Promise<FindingFocusedComparison | null> {
+}): Promise<EvalEvidenceV2 | null> {
   if (input.findings.length === 0) return null;
 
   const [reviewedFiles, transitionFiles, finalFiles] = await Promise.all([
@@ -68,8 +85,7 @@ export async function buildFindingFocusedComparison(input: {
     fetchComparison(input.request, input.repository, input.baseSha, input.finalSha),
   ]);
   if (!reviewedFiles || !transitionFiles || !finalFiles) return null;
-  const before: Focus[] = [];
-  const after: Focus[] = [];
+  const evidence: EvalFindingEvidence[] = [];
   const sources = new Map<string, Promise<readonly string[] | null>>();
 
   for (const finding of input.findings) {
@@ -88,11 +104,19 @@ export async function buildFindingFocusedComparison(input: {
         sources,
       ));
     if (!final) return null;
-    before.push(reviewed);
-    after.push(final);
+    evidence.push({
+      findingId: finding.id,
+      title: finding.title,
+      before: renderFocuses([reviewed]),
+      after: renderFocuses([final]),
+    });
   }
 
-  return { before: renderFocuses(before), after: renderFocuses(after) };
+  return {
+    version: 2,
+    mode: "finding-focused",
+    findings: evidence,
+  };
 }
 
 /** GitHub's Compare API returns patch hunks, not full files; parse those hunks for line lookup. */

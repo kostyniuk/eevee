@@ -1,0 +1,1 @@
+ALTER TABLE "eval_pairs" ADD COLUMN "evidence" jsonb;

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
@@ -13,6 +13,7 @@ type CreateReviewRecord = {
   readonly repositoryId: number;
   readonly repository: string;
   readonly pullRequestNumber: number;
+  readonly pullRequestTitle?: string;
   readonly baseCommitSha: string | null;
   readonly reviewedCommitSha: string;
   readonly instructions: Pick<ReviewerInstructions, "model" | "source" | "version">;
@@ -74,6 +75,7 @@ export interface ReviewRecordDao {
     readonly reviewRecordId: string;
     readonly beforeDiff: EvalPair["beforeDiff"];
     readonly afterDiff: EvalPair["afterDiff"];
+    readonly evidence: NonNullable<EvalPair["evidence"]>;
     readonly shuffleOrder: EvalPair["shuffleOrder"];
   }): Promise<EvalPair>;
   getEvalPair(id: string): Promise<EvalPair | null>;
@@ -148,6 +150,7 @@ export function createReviewRecordDao(
           repositoryId: input.repositoryId,
           repository: input.repository,
           pullRequestNumber: input.pullRequestNumber,
+          pullRequestTitle: input.pullRequestTitle ?? `Pull request #${input.pullRequestNumber}`,
           baseCommitSha: input.baseCommitSha,
           reviewedCommitSha: input.reviewedCommitSha,
           model: input.instructions.model,
@@ -280,18 +283,12 @@ export function createReviewRecordDao(
       const inserted = await db
         .insert(evalPairs)
         .values(input)
-        .onConflictDoNothing({ target: evalPairs.reviewRecordId })
+        .onConflictDoUpdate({
+          target: evalPairs.reviewRecordId,
+          set: { evidence: sql`coalesce(${evalPairs.evidence}, excluded.evidence)` },
+        })
         .returning();
-      if (inserted[0]) return inserted[0];
-
-      const existing = await db
-        .select()
-        .from(evalPairs)
-        .where(eq(evalPairs.reviewRecordId, input.reviewRecordId))
-        .limit(1);
-      const pair = existing[0];
-      if (!pair) throw new Error("Eval pair insert conflicted but no existing row was found.");
-      return pair;
+      return requiredPair(inserted);
     },
 
     async getEvalPair(id) {

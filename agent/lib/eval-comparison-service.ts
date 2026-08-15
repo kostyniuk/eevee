@@ -86,6 +86,7 @@ export async function processClosedPullRequest(input: {
             baseSha: claim.record.baseCommitSha,
             headSha: input.finalHeadSha,
           },
+          evidence: comparison,
           shuffleOrder: randomInt(2) === 0 ? "before_first" : "after_first",
         });
         await deliverEvalPair({
@@ -93,7 +94,6 @@ export async function processClosedPullRequest(input: {
           channelId: input.evalChannelId,
           slack: input.slack,
           dao: input.dao,
-          comparison,
         });
       }
     }
@@ -199,15 +199,14 @@ function displayedToIdentity(choice: "a" | "b", pair: EvalPair): "before" | "aft
   return choice === "a" ? (aIsBefore ? "before" : "after") : aIsBefore ? "after" : "before";
 }
 
-async function deliverEvalPair(input: {
+export async function deliverEvalPair(input: {
   readonly pair: EvalPair;
   readonly channelId: string;
-  readonly slack: EvalComparisonSlackApi;
-  readonly dao: ReviewRecordDao;
-  readonly comparison: {
-    readonly before: readonly string[];
-    readonly after: readonly string[];
-  };
+  readonly slack: Pick<EvalComparisonSlackApi, "findPosted" | "post">;
+  readonly dao: Pick<
+    ReviewRecordDao,
+    "claimEvalPairDelivery" | "getEvalPair" | "markEvalPairDelivered" | "releaseEvalPairDelivery"
+  >;
 }) {
   const claim = await input.dao.claimEvalPairDelivery(input.pair.id);
   if (!claim) {
@@ -228,11 +227,13 @@ async function deliverEvalPair(input: {
 
   let posted = alreadyPosted;
   if (!posted) {
-    const blocks = formatEvalPairBlocks(
-      claim.pair,
-      input.comparison.before,
-      input.comparison.after,
-    );
+    const evidence = claim.pair.evidence;
+    if (!evidence) {
+      await input.dao.releaseEvalPairDelivery(claim.pair.id, claimedAt);
+      throw new Error("Eval pair has no stored evidence; run the evidence backfill first.");
+    }
+    const sides = evidenceSides(evidence);
+    const blocks = formatEvalPairBlocks(claim.pair, sides.before, sides.after);
     const response = await input.slack.post({
       channelId: input.channelId,
       pairId: claim.pair.id,
@@ -255,6 +256,17 @@ async function deliverEvalPair(input: {
 
   const marked = await input.dao.markEvalPairDelivered(claim.pair.id, claimedAt, posted);
   if (!marked) throw new Error("Eval-pair delivery claim expired before delivery was recorded.");
+}
+
+function evidenceSides(evidence: NonNullable<EvalPair["evidence"]>): {
+  readonly before: readonly string[];
+  readonly after: readonly string[];
+} {
+  if (evidence.version === 1) return evidence;
+  return {
+    before: evidence.findings.flatMap((finding) => finding.before),
+    after: evidence.findings.flatMap((finding) => finding.after),
+  };
 }
 
 function formatEvalPairBlocks(
