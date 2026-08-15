@@ -1,5 +1,4 @@
-const FALLBACK_SERVICE_TOKEN = "demo-admin-token";
-
 export function serviceAuthorization(token?: string): string {
-  return `Bearer ${token || FALLBACK_SERVICE_TOKEN}`;
+  if (!token?.trim()) throw new Error("A service token is required.");
+  return `Bearer ${token}`;
 }
